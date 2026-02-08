@@ -149,6 +149,16 @@ Then inject it into `OAuthProvider`.
 - iOS/tvOS/watchOS: `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
 - macOS: `kSecAttrAccessibleAfterFirstUnlock` + data-protection keychain mode
 
+iCloud Keychain options:
+
+```swift
+// Option 1: explicit sync mode on the base store
+let store = KeychainTokenStore(syncMode: .iCloud)
+
+// Option 2: dedicated convenience wrapper
+let store = ICloudKeychainTokenStore()
+```
+
 ## Local Security Defaults
 
 `CloudflareTunnelProvider` defaults to:

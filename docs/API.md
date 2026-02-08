@@ -88,6 +88,11 @@ Concrete providers:
 - `ServiceTokenProvider`
 - `AuthMultiplexer`
 
+Token store implementations:
+- `InMemoryTokenStore`
+- `KeychainTokenStore`
+- `ICloudKeychainTokenStore`
+
 ## 5. HTTP/Request Utilities
 
 - `AccessRequestBuilder` builds Access-authenticated `URLRequest` instances.
@@ -98,4 +103,6 @@ Concrete providers:
 
 - `KeychainTokenStore` is compiled on Apple platforms that expose `Security` (`macOS`, `iOS`, `tvOS`, `watchOS`).
 - On `macOS`, the store defaults to data-protection keychain mode (`kSecUseDataProtectionKeychain`).
+- `KeychainTokenStore` supports `syncMode: .localOnly` (default) and `syncMode: .iCloud`.
+- `ICloudKeychainTokenStore` is a convenience wrapper over `KeychainTokenStore(syncMode: .iCloud)`.
 - Session actor API is fully async and does not require `@MainActor`.

@@ -43,5 +43,9 @@ final class TokenStoreTests: XCTestCase {
         let removed = try await store.readToken(for: key)
         XCTAssertNil(removed)
     }
+
+    func testICloudKeychainStoreConstructs() {
+        _ = ICloudKeychainTokenStore(service: "com.swift-cloudflared.tests.icloud")
+    }
 #endif
 }

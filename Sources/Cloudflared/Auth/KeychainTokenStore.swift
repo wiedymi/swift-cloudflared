@@ -2,30 +2,49 @@ import Foundation
 #if canImport(Security) && (os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
 import Security
 
+public enum KeychainSyncMode: Sendable, Equatable {
+    case localOnly
+    case iCloud
+}
+
 public actor KeychainTokenStore: TokenStore {
     private let service: String
     private let accessibility: CFString
     private let useDataProtectionKeychain: Bool
+    private let syncMode: KeychainSyncMode
 
     #if os(macOS)
     public init(
         service: String = "com.swift-cloudflared.tokens",
-        accessibility: CFString = kSecAttrAccessibleAfterFirstUnlock,
-        useDataProtectionKeychain: Bool = true
+        accessibility: CFString? = nil,
+        useDataProtectionKeychain: Bool = true,
+        syncMode: KeychainSyncMode = .localOnly
     ) {
         self.service = service
-        self.accessibility = accessibility
+        self.accessibility = accessibility ?? kSecAttrAccessibleAfterFirstUnlock
         self.useDataProtectionKeychain = useDataProtectionKeychain
+        self.syncMode = syncMode
     }
     #else
     public init(
         service: String = "com.swift-cloudflared.tokens",
-        accessibility: CFString = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        useDataProtectionKeychain: Bool = false
+        accessibility: CFString? = nil,
+        useDataProtectionKeychain: Bool = false,
+        syncMode: KeychainSyncMode = .localOnly
     ) {
         self.service = service
-        self.accessibility = accessibility
+        if let accessibility {
+            self.accessibility = accessibility
+        } else {
+            switch syncMode {
+            case .localOnly:
+                self.accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            case .iCloud:
+                self.accessibility = kSecAttrAccessibleAfterFirstUnlock
+            }
+        }
         self.useDataProtectionKeychain = useDataProtectionKeychain
+        self.syncMode = syncMode
     }
     #endif
 
@@ -82,6 +101,10 @@ public actor KeychainTokenStore: TokenStore {
             kSecAttrAccount as String: key,
         ]
 
+        if syncMode == .iCloud {
+            query[kSecAttrSynchronizable as String] = kCFBooleanTrue
+        }
+
     #if os(macOS)
         if useDataProtectionKeychain {
             query[kSecUseDataProtectionKeychain as String] = kCFBooleanTrue
@@ -91,5 +114,45 @@ public actor KeychainTokenStore: TokenStore {
         return query
     }
 
+}
+
+public actor ICloudKeychainTokenStore: TokenStore {
+    private let wrapped: KeychainTokenStore
+
+    #if os(macOS)
+    public init(
+        service: String = "com.swift-cloudflared.tokens",
+        useDataProtectionKeychain: Bool = true
+    ) {
+        self.wrapped = KeychainTokenStore(
+            service: service,
+            useDataProtectionKeychain: useDataProtectionKeychain,
+            syncMode: .iCloud
+        )
+    }
+    #else
+    public init(
+        service: String = "com.swift-cloudflared.tokens",
+        useDataProtectionKeychain: Bool = false
+    ) {
+        self.wrapped = KeychainTokenStore(
+            service: service,
+            useDataProtectionKeychain: useDataProtectionKeychain,
+            syncMode: .iCloud
+        )
+    }
+    #endif
+
+    public func readToken(for key: String) async throws -> String? {
+        try await wrapped.readToken(for: key)
+    }
+
+    public func writeToken(_ token: String, for key: String) async throws {
+        try await wrapped.writeToken(token, for: key)
+    }
+
+    public func removeToken(for key: String) async throws {
+        try await wrapped.removeToken(for: key)
+    }
 }
 #endif
