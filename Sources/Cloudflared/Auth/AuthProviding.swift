@@ -1,29 +1,29 @@
-public protocol SSHAuthProviding: Sendable {
-    func authenticate(hostname: String, method: SSHAuthMethod) async throws -> SSHAuthContext
+public protocol AuthProviding: Sendable {
+    func authenticate(hostname: String, method: AuthMethod) async throws -> AuthContext
 }
 
-public protocol SSHOAuthFlow: Sendable {
+public protocol OAuthFlow: Sendable {
     func fetchToken(teamDomain: String, appDomain: String, callbackScheme: String, hostname: String) async throws -> String
 }
 
-public struct SSHOAuthProvider: SSHAuthProviding {
-    private let flow: any SSHOAuthFlow
-    private let tokenStore: any SSHTokenStore
-    private let validator: SSHJWTValidator
+public struct OAuthProvider: AuthProviding {
+    private let flow: any OAuthFlow
+    private let tokenStore: any TokenStore
+    private let validator: JWTValidator
 
     public init(
-        flow: any SSHOAuthFlow,
-        tokenStore: any SSHTokenStore,
-        validator: SSHJWTValidator = SSHJWTValidator()
+        flow: any OAuthFlow,
+        tokenStore: any TokenStore,
+        validator: JWTValidator = JWTValidator()
     ) {
         self.flow = flow
         self.tokenStore = tokenStore
         self.validator = validator
     }
 
-    public func authenticate(hostname: String, method: SSHAuthMethod) async throws -> SSHAuthContext {
+    public func authenticate(hostname: String, method: AuthMethod) async throws -> AuthContext {
         guard case .oauth(let teamDomain, let appDomain, let callbackScheme) = method else {
-            throw SSHFailure.configuration("oauth provider requires oauth auth method")
+            throw Failure.configuration("oauth provider requires oauth auth method")
         }
 
         let cacheKey = makeCacheKey(teamDomain: teamDomain, appDomain: appDomain, hostname: hostname)
@@ -47,17 +47,17 @@ public struct SSHOAuthProvider: SSHAuthProviding {
         ).trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !freshToken.isEmpty else {
-            throw SSHFailure.auth("oauth flow returned empty token")
+            throw Failure.auth("oauth flow returned empty token")
         }
 
         do {
             if try validator.isExpired(freshToken) {
-                throw SSHFailure.auth("oauth flow returned expired token")
+                throw Failure.auth("oauth flow returned expired token")
             }
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             throw failure
         } catch {
-            throw SSHFailure.auth("oauth flow returned invalid token")
+            throw Failure.auth("oauth flow returned invalid token")
         }
 
         try await tokenStore.writeToken(freshToken, for: cacheKey)
@@ -69,42 +69,42 @@ public struct SSHOAuthProvider: SSHAuthProviding {
     }
 }
 
-public struct SSHServiceTokenProvider: SSHAuthProviding {
+public struct ServiceTokenProvider: AuthProviding {
     public init() {}
 
-    public func authenticate(hostname: String, method: SSHAuthMethod) async throws -> SSHAuthContext {
+    public func authenticate(hostname: String, method: AuthMethod) async throws -> AuthContext {
         guard case .serviceToken(_, let clientID, let clientSecret) = method else {
-            throw SSHFailure.configuration("service token provider requires serviceToken auth method")
+            throw Failure.configuration("service token provider requires serviceToken auth method")
         }
 
         guard !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw SSHFailure.auth("service token client id must not be empty")
+            throw Failure.auth("service token client id must not be empty")
         }
 
         guard !clientSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw SSHFailure.auth("service token client secret must not be empty")
+            throw Failure.auth("service token client secret must not be empty")
         }
 
         return .serviceToken(id: clientID, secret: clientSecret)
     }
 }
 
-public struct SSHAuthMultiplexer: SSHAuthProviding {
-    private let oauthProvider: any SSHAuthProviding
-    private let serviceProvider: any SSHAuthProviding
-    private let oauthFallback: (@Sendable (String) -> SSHAuthMethod?)?
+public struct AuthMultiplexer: AuthProviding {
+    private let oauthProvider: any AuthProviding
+    private let serviceProvider: any AuthProviding
+    private let oauthFallback: (@Sendable (String) -> AuthMethod?)?
 
     public init(
-        oauthProvider: any SSHAuthProviding,
-        serviceProvider: any SSHAuthProviding,
-        oauthFallback: (@Sendable (String) -> SSHAuthMethod?)? = nil
+        oauthProvider: any AuthProviding,
+        serviceProvider: any AuthProviding,
+        oauthFallback: (@Sendable (String) -> AuthMethod?)? = nil
     ) {
         self.oauthProvider = oauthProvider
         self.serviceProvider = serviceProvider
         self.oauthFallback = oauthFallback
     }
 
-    public func authenticate(hostname: String, method: SSHAuthMethod) async throws -> SSHAuthContext {
+    public func authenticate(hostname: String, method: AuthMethod) async throws -> AuthContext {
         switch method {
         case .oauth:
             return try await oauthProvider.authenticate(hostname: hostname, method: method)

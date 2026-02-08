@@ -1,14 +1,14 @@
 import XCTest
 @testable import Cloudflared
 
-final class SSHSessionActorTests: XCTestCase {
+final class SessionActorTests: XCTestCase {
     func testNoopSleepAndExplicitInitializer() async throws {
-        await SSHSessionActor.noopSleep(1)
+        await SessionActor.noopSleep(1)
 
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: ScriptedTunnelProvider(outcomes: [.success(3333)]),
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -22,10 +22,10 @@ final class SSHSessionActorTests: XCTestCase {
 
     func testConnectAndDisconnectSuccess() async throws {
         let tunnel = ScriptedTunnelProvider(outcomes: [.success(4222)])
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: tunnel,
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -50,10 +50,10 @@ final class SSHSessionActorTests: XCTestCase {
 
     func testConnectRejectsInvalidStateWhenAlreadyConnected() async throws {
         let tunnel = ScriptedTunnelProvider(outcomes: [.success(4222)])
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: tunnel,
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -63,7 +63,7 @@ final class SSHSessionActorTests: XCTestCase {
         do {
             _ = try await session.connect(hostname: "ssh.example.com", method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb"))
             XCTFail("expected invalid state")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             if case .invalidState = failure {
                 return
             }
@@ -74,10 +74,10 @@ final class SSHSessionActorTests: XCTestCase {
     }
 
     func testInvalidHostnameFailsEarly() async {
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: ScriptedTunnelProvider(outcomes: []),
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -85,7 +85,7 @@ final class SSHSessionActorTests: XCTestCase {
         do {
             _ = try await session.connect(hostname: " ", method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb"))
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .configuration("hostname must not be empty"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -94,17 +94,17 @@ final class SSHSessionActorTests: XCTestCase {
 
     func testServiceTokenFallbackToOAuth() async throws {
         let tunnel = ScriptedTunnelProvider(outcomes: [.success(5222)])
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, method in
                 switch method {
                 case .serviceToken:
-                    throw SSHFailure.auth("service token rejected")
+                    throw Failure.auth("service token rejected")
                 case .oauth:
                     return .appToken("oauth-jwt")
                 }
             },
             tunnelProvider: tunnel,
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: { _ in
                 .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             },
@@ -127,17 +127,17 @@ final class SSHSessionActorTests: XCTestCase {
     }
 
     func testServiceTokenFallbackFailurePublishesFailedState() async {
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, method in
                 switch method {
                 case .serviceToken:
-                    throw SSHFailure.auth("service token rejected")
+                    throw Failure.auth("service token rejected")
                 case .oauth:
-                    throw SSHFailure.auth("oauth rejected")
+                    throw Failure.auth("oauth rejected")
                 }
             },
             tunnelProvider: ScriptedTunnelProvider(outcomes: []),
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: { _ in
                 .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             },
@@ -154,7 +154,7 @@ final class SSHSessionActorTests: XCTestCase {
                 method: .serviceToken(teamDomain: "team", clientID: "id", clientSecret: "secret")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .auth("oauth rejected"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -169,10 +169,10 @@ final class SSHSessionActorTests: XCTestCase {
             .failure(.transport("temporary", retryable: true)),
             .success(6222),
         ])
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: tunnel,
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 1, baseDelayNanoseconds: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 1, baseDelayNanoseconds: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -195,10 +195,10 @@ final class SSHSessionActorTests: XCTestCase {
             .failure(.transport("temporary", retryable: true)),
             .failure(.transport("still temporary", retryable: true)),
         ])
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: tunnel,
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 1, baseDelayNanoseconds: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 1, baseDelayNanoseconds: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -210,7 +210,7 @@ final class SSHSessionActorTests: XCTestCase {
         do {
             _ = try await session.connect(hostname: "ssh.example.com", method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb"))
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("still temporary", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -224,10 +224,10 @@ final class SSHSessionActorTests: XCTestCase {
         let tunnel = ScriptedTunnelProvider(outcomes: [
             .failure(.transport("fatal", retryable: false)),
         ])
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             tunnelProvider: tunnel,
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 3, baseDelayNanoseconds: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 3, baseDelayNanoseconds: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -239,7 +239,7 @@ final class SSHSessionActorTests: XCTestCase {
         do {
             _ = try await session.connect(hostname: "ssh.example.com", method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb"))
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("fatal", retryable: false))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -254,10 +254,10 @@ final class SSHSessionActorTests: XCTestCase {
             case boom
         }
 
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: ClosureAuthProvider { _, _ in throw DummyError.boom },
             tunnelProvider: ScriptedTunnelProvider(outcomes: []),
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 0),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 0),
             oauthFallback: nil,
             sleep: { _ in }
         )
@@ -265,7 +265,7 @@ final class SSHSessionActorTests: XCTestCase {
         do {
             _ = try await session.connect(hostname: "ssh.example.com", method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb"))
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             if case .internalError = failure {
                 return
             }

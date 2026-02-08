@@ -1,18 +1,18 @@
 import XCTest
 @testable import Cloudflared
 
-final class SSHOAuthProviderTests: XCTestCase {
+final class OAuthProviderTests: XCTestCase {
     func testUsesCachedTokenWhenValid() async throws {
         let now = Date(timeIntervalSince1970: 100)
         let token = makeJWT(expiration: 200)
-        let store = SSHInMemoryTokenStore(initialStorage: [
+        let store = InMemoryTokenStore(initialStorage: [
             "oauth|team|app|host": token
         ])
         let flow = MockOAuthFlow(token: makeJWT(expiration: 500))
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: flow,
             tokenStore: store,
-            validator: SSHJWTValidator(clock: FixedClock(now: now))
+            validator: JWTValidator(clock: FixedClock(now: now))
         )
 
         let context = try await provider.authenticate(
@@ -28,12 +28,12 @@ final class SSHOAuthProviderTests: XCTestCase {
     func testFetchesAndStoresTokenWhenMissing() async throws {
         let now = Date(timeIntervalSince1970: 100)
         let fresh = makeJWT(expiration: 500)
-        let store = SSHInMemoryTokenStore()
+        let store = InMemoryTokenStore()
         let flow = MockOAuthFlow(token: fresh)
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: flow,
             tokenStore: store,
-            validator: SSHJWTValidator(clock: FixedClock(now: now))
+            validator: JWTValidator(clock: FixedClock(now: now))
         )
 
         let context = try await provider.authenticate(
@@ -52,14 +52,14 @@ final class SSHOAuthProviderTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 500)
         let expired = makeJWT(expiration: 100)
         let fresh = makeJWT(expiration: 1000)
-        let store = SSHInMemoryTokenStore(initialStorage: [
+        let store = InMemoryTokenStore(initialStorage: [
             "oauth|team|app|host": expired
         ])
         let flow = MockOAuthFlow(token: fresh)
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: flow,
             tokenStore: store,
-            validator: SSHJWTValidator(clock: FixedClock(now: now))
+            validator: JWTValidator(clock: FixedClock(now: now))
         )
 
         let context = try await provider.authenticate(
@@ -74,15 +74,15 @@ final class SSHOAuthProviderTests: XCTestCase {
 
     func testMalformedCachedTokenGetsReplaced() async throws {
         let now = Date(timeIntervalSince1970: 100)
-        let store = SSHInMemoryTokenStore(initialStorage: [
+        let store = InMemoryTokenStore(initialStorage: [
             "oauth|team|app|host": "not-a-jwt"
         ])
         let fresh = makeJWT(expiration: 500)
         let flow = MockOAuthFlow(token: fresh)
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: flow,
             tokenStore: store,
-            validator: SSHJWTValidator(clock: FixedClock(now: now))
+            validator: JWTValidator(clock: FixedClock(now: now))
         )
 
         let context = try await provider.authenticate(
@@ -96,10 +96,10 @@ final class SSHOAuthProviderTests: XCTestCase {
     }
 
     func testRejectsNonOAuthMethod() async {
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: MockOAuthFlow(token: makeJWT(expiration: 200)),
-            tokenStore: SSHInMemoryTokenStore(),
-            validator: SSHJWTValidator(clock: FixedClock(now: Date(timeIntervalSince1970: 0)))
+            tokenStore: InMemoryTokenStore(),
+            validator: JWTValidator(clock: FixedClock(now: Date(timeIntervalSince1970: 0)))
         )
 
         do {
@@ -108,7 +108,7 @@ final class SSHOAuthProviderTests: XCTestCase {
                 method: .serviceToken(teamDomain: "team", clientID: "id", clientSecret: "secret")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .configuration("oauth provider requires oauth auth method"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -116,10 +116,10 @@ final class SSHOAuthProviderTests: XCTestCase {
     }
 
     func testRejectsEmptyTokenFromFlow() async {
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: MockOAuthFlow(token: "  "),
-            tokenStore: SSHInMemoryTokenStore(),
-            validator: SSHJWTValidator(clock: FixedClock(now: Date(timeIntervalSince1970: 0)))
+            tokenStore: InMemoryTokenStore(),
+            validator: JWTValidator(clock: FixedClock(now: Date(timeIntervalSince1970: 0)))
         )
 
         do {
@@ -128,7 +128,7 @@ final class SSHOAuthProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .auth("oauth flow returned empty token"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -137,10 +137,10 @@ final class SSHOAuthProviderTests: XCTestCase {
 
     func testRejectsExpiredTokenFromFlow() async {
         let now = Date(timeIntervalSince1970: 500)
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: MockOAuthFlow(token: makeJWT(expiration: 100)),
-            tokenStore: SSHInMemoryTokenStore(),
-            validator: SSHJWTValidator(clock: FixedClock(now: now))
+            tokenStore: InMemoryTokenStore(),
+            validator: JWTValidator(clock: FixedClock(now: now))
         )
 
         do {
@@ -149,7 +149,7 @@ final class SSHOAuthProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .auth("oauth flow returned expired token"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -161,10 +161,10 @@ final class SSHOAuthProviderTests: XCTestCase {
         let payload = Data("not-json".utf8).base64EncodedString()
         let invalid = "\(header).\(payload).sig"
 
-        let provider = SSHOAuthProvider(
+        let provider = OAuthProvider(
             flow: MockOAuthFlow(token: invalid),
-            tokenStore: SSHInMemoryTokenStore(),
-            validator: SSHJWTValidator(clock: FixedClock(now: Date(timeIntervalSince1970: 0)))
+            tokenStore: InMemoryTokenStore(),
+            validator: JWTValidator(clock: FixedClock(now: Date(timeIntervalSince1970: 0)))
         )
 
         do {
@@ -173,7 +173,7 @@ final class SSHOAuthProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .auth("oauth flow returned invalid token"))
         } catch {
             XCTFail("unexpected error: \(error)")

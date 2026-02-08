@@ -1,7 +1,7 @@
 import Foundation
 @testable import Cloudflared
 
-struct FixedClock: SSHClock {
+struct FixedClock: TokenClock {
     let now: Date
 }
 
@@ -38,7 +38,7 @@ private func base64URLEncode(_ data: Data) -> String {
         .replacingOccurrences(of: "=", with: "")
 }
 
-actor MockOAuthFlow: SSHOAuthFlow {
+actor MockOAuthFlow: OAuthFlow {
     var token: String
     var error: Error?
     private(set) var callCount: Int
@@ -58,20 +58,20 @@ actor MockOAuthFlow: SSHOAuthFlow {
     }
 }
 
-struct ClosureAuthProvider: SSHAuthProviding {
-    let handler: @Sendable (String, SSHAuthMethod) async throws -> SSHAuthContext
+struct ClosureAuthProvider: AuthProviding {
+    let handler: @Sendable (String, AuthMethod) async throws -> AuthContext
 
-    func authenticate(hostname: String, method: SSHAuthMethod) async throws -> SSHAuthContext {
+    func authenticate(hostname: String, method: AuthMethod) async throws -> AuthContext {
         try await handler(hostname, method)
     }
 }
 
 enum TunnelOpenOutcome: Sendable, Equatable {
     case success(UInt16)
-    case failure(SSHFailure)
+    case failure(Failure)
 }
 
-actor ScriptedTunnelProvider: SSHTunnelProviding {
+actor ScriptedTunnelProvider: TunnelProviding {
     private var outcomes: [TunnelOpenOutcome]
     private(set) var openCalls: Int = 0
     private(set) var closeCalls: Int = 0
@@ -80,7 +80,7 @@ actor ScriptedTunnelProvider: SSHTunnelProviding {
         self.outcomes = outcomes
     }
 
-    func open(hostname: String, authContext: SSHAuthContext, method: SSHAuthMethod) async throws -> UInt16 {
+    func open(hostname: String, authContext: AuthContext, method: AuthMethod) async throws -> UInt16 {
         openCalls += 1
         if outcomes.isEmpty {
             return 2222
@@ -100,9 +100,9 @@ actor ScriptedTunnelProvider: SSHTunnelProviding {
     }
 }
 
-func collectStates(from stream: AsyncStream<SSHConnectionState>, count: Int) async -> [SSHConnectionState] {
+func collectStates(from stream: AsyncStream<ConnectionState>, count: Int) async -> [ConnectionState] {
     var iterator = stream.makeAsyncIterator()
-    var states: [SSHConnectionState] = []
+    var states: [ConnectionState] = []
     while states.count < count, let state = await iterator.next() {
         states.append(state)
     }

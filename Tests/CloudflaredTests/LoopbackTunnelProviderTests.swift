@@ -7,9 +7,9 @@ import Darwin
 import Glibc
 #endif
 
-final class SSHLoopbackTunnelProviderTests: XCTestCase {
+final class LoopbackTunnelProviderTests: XCTestCase {
     func testOpenAndCloseLifecycle() async throws {
-        let tunnel = SSHLoopbackTunnelProvider()
+        let tunnel = LoopbackTunnelProvider()
         let port = try await tunnel.open(
             hostname: "ssh.example.com",
             authContext: .appToken("jwt"),
@@ -23,7 +23,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testSecondOpenFails() async throws {
-        let tunnel = SSHLoopbackTunnelProvider()
+        let tunnel = LoopbackTunnelProvider()
         _ = try await tunnel.open(
             hostname: "ssh.example.com",
             authContext: .appToken("jwt"),
@@ -37,7 +37,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected second open to fail")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .invalidState("tunnel already open"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -47,7 +47,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testReopenAfterClose() async throws {
-        let tunnel = SSHLoopbackTunnelProvider()
+        let tunnel = LoopbackTunnelProvider()
         _ = try await tunnel.open(
             hostname: "ssh.example.com",
             authContext: .appToken("jwt"),
@@ -65,12 +65,12 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testCloseWithoutOpenIsNoOp() async {
-        let tunnel = SSHLoopbackTunnelProvider()
+        let tunnel = LoopbackTunnelProvider()
         await tunnel.close()
     }
 
     func testFaultInjectionSocketFailure() async {
-        let tunnel = SSHLoopbackTunnelProvider(faultInjection: .socket)
+        let tunnel = LoopbackTunnelProvider(faultInjection: .socket)
         do {
             _ = try await tunnel.open(
                 hostname: "ssh.example.com",
@@ -78,7 +78,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to create socket", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -86,7 +86,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionInetPtonFailure() async {
-        let tunnel = SSHLoopbackTunnelProvider(faultInjection: .inetPton)
+        let tunnel = LoopbackTunnelProvider(faultInjection: .inetPton)
         do {
             _ = try await tunnel.open(
                 hostname: "ssh.example.com",
@@ -94,7 +94,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to encode loopback address", retryable: false))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -102,7 +102,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionBindFailure() async {
-        let tunnel = SSHLoopbackTunnelProvider(faultInjection: .bind)
+        let tunnel = LoopbackTunnelProvider(faultInjection: .bind)
         do {
             _ = try await tunnel.open(
                 hostname: "ssh.example.com",
@@ -110,7 +110,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to bind loopback listener", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -118,7 +118,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionListenFailure() async {
-        let tunnel = SSHLoopbackTunnelProvider(faultInjection: .listen)
+        let tunnel = LoopbackTunnelProvider(faultInjection: .listen)
         do {
             _ = try await tunnel.open(
                 hostname: "ssh.example.com",
@@ -126,7 +126,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to listen on loopback socket", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -134,7 +134,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionGetSockNameFailure() async {
-        let tunnel = SSHLoopbackTunnelProvider(faultInjection: .getsockname)
+        let tunnel = LoopbackTunnelProvider(faultInjection: .getsockname)
         do {
             _ = try await tunnel.open(
                 hostname: "ssh.example.com",
@@ -142,7 +142,7 @@ final class SSHLoopbackTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to read local listener port", retryable: false))
         } catch {
             XCTFail("unexpected error: \(error)")

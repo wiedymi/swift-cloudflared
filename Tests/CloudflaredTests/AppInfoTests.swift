@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import Cloudflared
 
-final class SSHAppInfoTests: XCTestCase {
+final class AppInfoTests: XCTestCase {
     func testParseFromLoginRedirect() throws {
         let requestURL = try XCTUnwrap(URL(string: "https://ssh.example.com"))
         let finalURL = try XCTUnwrap(URL(string: "https://team.cloudflareaccess.com/cdn-cgi/access/login?kid=aud123"))
@@ -12,13 +12,13 @@ final class SSHAppInfoTests: XCTestCase {
                 statusCode: 302,
                 httpVersion: nil,
                 headerFields: [
-                    SSHAccessHeader.appDomain: "ssh.example.com"
+                    AccessHeader.appDomain: "ssh.example.com"
                 ]
             )
         )
 
-        let info = try SSHAppInfoParser.parse(requestURL: requestURL, response: response)
-        XCTAssertEqual(info, SSHAppInfo(authDomain: "team.cloudflareaccess.com", appAUD: "aud123", appDomain: "ssh.example.com"))
+        let info = try AppInfoParser.parse(requestURL: requestURL, response: response)
+        XCTAssertEqual(info, AppInfo(authDomain: "team.cloudflareaccess.com", appAUD: "aud123", appDomain: "ssh.example.com"))
     }
 
     func testParseFromAUDHeader() throws {
@@ -30,14 +30,14 @@ final class SSHAppInfoTests: XCTestCase {
                 statusCode: 403,
                 httpVersion: nil,
                 headerFields: [
-                    SSHAccessHeader.appDomain: "ssh.example.com",
-                    SSHAccessHeader.appAUD: "aud456",
+                    AccessHeader.appDomain: "ssh.example.com",
+                    AccessHeader.appAUD: "aud456",
                 ]
             )
         )
 
-        let info = try SSHAppInfoParser.parse(requestURL: requestURL, response: response)
-        XCTAssertEqual(info, SSHAppInfo(authDomain: "ssh.example.com", appAUD: "aud456", appDomain: "ssh.example.com"))
+        let info = try AppInfoParser.parse(requestURL: requestURL, response: response)
+        XCTAssertEqual(info, AppInfo(authDomain: "ssh.example.com", appAUD: "aud456", appDomain: "ssh.example.com"))
     }
 
     func testParseRejectsMissingDomainHeader() throws {
@@ -51,7 +51,7 @@ final class SSHAppInfoTests: XCTestCase {
             )
         )
 
-        XCTAssertThrowsError(try SSHAppInfoParser.parse(requestURL: requestURL, response: response))
+        XCTAssertThrowsError(try AppInfoParser.parse(requestURL: requestURL, response: response))
     }
 
     func testParseRejectsMissingKidOnLoginRedirect() throws {
@@ -62,12 +62,12 @@ final class SSHAppInfoTests: XCTestCase {
                 statusCode: 302,
                 httpVersion: nil,
                 headerFields: [
-                    SSHAccessHeader.appDomain: "ssh.example.com"
+                    AccessHeader.appDomain: "ssh.example.com"
                 ]
             )
         )
 
-        XCTAssertThrowsError(try SSHAppInfoParser.parse(requestURL: requestURL, response: response))
+        XCTAssertThrowsError(try AppInfoParser.parse(requestURL: requestURL, response: response))
     }
 
     func testParseRejectsMissingAuthDomain() throws {
@@ -77,11 +77,11 @@ final class SSHAppInfoTests: XCTestCase {
                 url: try XCTUnwrap(URL(string: "file:///tmp/no-host")),
                 statusCode: 200,
                 httpVersion: nil,
-                headerFields: [SSHAccessHeader.appDomain: "ssh.example.com", SSHAccessHeader.appAUD: "aud"]
+                headerFields: [AccessHeader.appDomain: "ssh.example.com", AccessHeader.appAUD: "aud"]
             )
         )
 
-        XCTAssertThrowsError(try SSHAppInfoParser.parse(requestURL: requestURL, response: response))
+        XCTAssertThrowsError(try AppInfoParser.parse(requestURL: requestURL, response: response))
     }
 
     func testParseRejectsMissingAUDOutsideLogin() throws {
@@ -91,11 +91,11 @@ final class SSHAppInfoTests: XCTestCase {
                 url: try XCTUnwrap(URL(string: "https://ssh.example.com/allowed")),
                 statusCode: 403,
                 httpVersion: nil,
-                headerFields: [SSHAccessHeader.appDomain: "ssh.example.com"]
+                headerFields: [AccessHeader.appDomain: "ssh.example.com"]
             )
         )
 
-        XCTAssertThrowsError(try SSHAppInfoParser.parse(requestURL: requestURL, response: response))
+        XCTAssertThrowsError(try AppInfoParser.parse(requestURL: requestURL, response: response))
     }
 
     func testResolverBuildsHEADRequestAndParsesResponse() async throws {
@@ -103,10 +103,10 @@ final class SSHAppInfoTests: XCTestCase {
         let client = MockHTTPClient(
             responseURL: try XCTUnwrap(URL(string: "https://team.cloudflareaccess.com/cdn-cgi/access/login?kid=aud789")),
             statusCode: 302,
-            headers: [SSHAccessHeader.appDomain: "ssh.example.com"]
+            headers: [AccessHeader.appDomain: "ssh.example.com"]
         )
 
-        let resolver = SSHAppInfoResolver(client: client, userAgent: "test-agent")
+        let resolver = AppInfoResolver(client: client, userAgent: "test-agent")
         let info = try await resolver.resolve(appURL: appURL)
 
         XCTAssertEqual(info.appAUD, "aud789")
@@ -116,7 +116,7 @@ final class SSHAppInfoTests: XCTestCase {
     }
 }
 
-actor MockHTTPClient: SSHHTTPClient {
+actor MockHTTPClient: HTTPClient {
     private(set) var lastRequest: URLRequest?
 
     private let responseURL: URL

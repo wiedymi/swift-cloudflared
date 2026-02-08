@@ -2,7 +2,7 @@ import Foundation
 #if canImport(Security) && (os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
 import Security
 
-public actor SSHKeychainTokenStore: SSHTokenStore {
+public actor KeychainTokenStore: TokenStore {
     private let service: String
     private let accessibility: CFString
     private let useDataProtectionKeychain: Bool
@@ -40,19 +40,19 @@ public actor SSHKeychainTokenStore: SSHTokenStore {
         switch status {
         case errSecSuccess:
             guard let data = item as? Data, let token = String(data: data, encoding: .utf8) else {
-                throw SSHFailure.internalError("failed to decode token from keychain")
+                throw Failure.internalError("failed to decode token from keychain")
             }
             return token
         case errSecItemNotFound:
             return nil
         default:
-            throw SSHFailure.internalError("keychain read failed: \(status)")
+            throw Failure.internalError("keychain read failed: \(status)")
         }
     }
 
     public func writeToken(_ token: String, for key: String) async throws {
         guard let tokenData = token.data(using: .utf8) else {
-            throw SSHFailure.configuration("unable to encode token")
+            throw Failure.configuration("unable to encode token")
         }
 
         let query = baseQuery(for: key)
@@ -64,14 +64,14 @@ public actor SSHKeychainTokenStore: SSHTokenStore {
 
         let status = SecItemAdd(insert as CFDictionary, nil)
         guard status == errSecSuccess else {
-            throw SSHFailure.internalError("keychain write failed: \(status)")
+            throw Failure.internalError("keychain write failed: \(status)")
         }
     }
 
     public func removeToken(for key: String) async throws {
         let status = SecItemDelete(baseQuery(for: key) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw SSHFailure.internalError("keychain delete failed: \(status)")
+            throw Failure.internalError("keychain delete failed: \(status)")
         }
     }
 

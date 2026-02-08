@@ -4,9 +4,9 @@ import XCTest
 import Security
 #endif
 
-final class SSHTokenStoreTests: XCTestCase {
+final class TokenStoreTests: XCTestCase {
     func testInMemoryStoreRoundTrip() async throws {
-        let store = SSHInMemoryTokenStore()
+        let store = InMemoryTokenStore()
         let initial = try await store.readToken(for: "k")
         XCTAssertNil(initial)
 
@@ -29,7 +29,7 @@ final class SSHTokenStoreTests: XCTestCase {
 
         let service = "com.swift-cloudflared.tests.\(UUID().uuidString)"
         let key = "token-\(UUID().uuidString)"
-        let store = SSHKeychainTokenStore(service: service)
+        let store = KeychainTokenStore(service: service)
 
         try await store.removeToken(for: key)
         let initial = try await store.readToken(for: key)

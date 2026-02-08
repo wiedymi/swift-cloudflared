@@ -1,9 +1,9 @@
-public enum SSHAuthMethod: Sendable, Equatable {
+public enum AuthMethod: Sendable, Equatable {
     case oauth(teamDomain: String, appDomain: String, callbackScheme: String)
     case serviceToken(teamDomain: String, clientID: String, clientSecret: String)
 }
 
-public struct SSHAuthContext: Sendable, Equatable {
+public struct AuthContext: Sendable, Equatable {
     public var accessToken: String?
     public var headers: [String: String]
 
@@ -20,14 +20,14 @@ public struct SSHAuthContext: Sendable, Equatable {
         Self(
             accessToken: nil,
             headers: [
-                SSHAccessHeader.clientID: id,
-                SSHAccessHeader.clientSecret: secret,
+                AccessHeader.clientID: id,
+                AccessHeader.clientSecret: secret,
             ]
         )
     }
 }
 
-public enum SSHFailure: Error, Sendable, Equatable {
+public enum Failure: Error, Sendable, Equatable {
     case invalidState(String)
     case auth(String)
     case transport(String, retryable: Bool)
@@ -45,18 +45,18 @@ public enum SSHFailure: Error, Sendable, Equatable {
     }
 }
 
-public enum SSHConnectionState: Sendable, Equatable {
+public enum ConnectionState: Sendable, Equatable {
     case idle
     case authenticating
     case connecting
     case connected(localPort: UInt16)
     case reconnecting(attempt: Int)
     case disconnected
-    case failed(SSHFailure)
+    case failed(Failure)
 }
 
-public protocol SSHClient: Sendable {
-    var state: AsyncStream<SSHConnectionState> { get }
-    func connect(hostname: String, method: SSHAuthMethod) async throws -> UInt16
+public protocol Client: Sendable {
+    var state: AsyncStream<ConnectionState> { get }
+    func connect(hostname: String, method: AuthMethod) async throws -> UInt16
     func disconnect() async
 }

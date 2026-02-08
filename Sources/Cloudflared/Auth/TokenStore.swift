@@ -1,12 +1,12 @@
 import Foundation
 
-public protocol SSHTokenStore: Sendable {
+public protocol TokenStore: Sendable {
     func readToken(for key: String) async throws -> String?
     func writeToken(_ token: String, for key: String) async throws
     func removeToken(for key: String) async throws
 }
 
-public actor SSHInMemoryTokenStore: SSHTokenStore {
+public actor InMemoryTokenStore: TokenStore {
     private var storage: [String: String]
 
     public init(initialStorage: [String: String] = [:]) {

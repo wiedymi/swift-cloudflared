@@ -1,6 +1,6 @@
 import Foundation
 
-public struct SSHAccessRequestBuilder: Sendable {
+public struct AccessRequestBuilder: Sendable {
     private let userAgent: String
 
     public init(userAgent: String = "swift-cloudflared") {
@@ -9,7 +9,7 @@ public struct SSHAccessRequestBuilder: Sendable {
 
     public func build(
         originURL: URL,
-        authContext: SSHAuthContext,
+        authContext: AuthContext,
         destination: String? = nil,
         additionalHeaders: [String: String] = [:]
     ) -> URLRequest {
@@ -18,7 +18,7 @@ public struct SSHAccessRequestBuilder: Sendable {
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
         if let token = authContext.accessToken, !token.isEmpty {
-            request.setValue(token, forHTTPHeaderField: SSHAccessHeader.accessToken)
+            request.setValue(token, forHTTPHeaderField: AccessHeader.accessToken)
         }
 
         for (header, value) in authContext.headers {
@@ -26,7 +26,7 @@ public struct SSHAccessRequestBuilder: Sendable {
         }
 
         if let destination, !destination.isEmpty {
-            request.setValue(destination, forHTTPHeaderField: SSHAccessHeader.jumpDestination)
+            request.setValue(destination, forHTTPHeaderField: AccessHeader.jumpDestination)
         }
 
         for (header, value) in additionalHeaders {

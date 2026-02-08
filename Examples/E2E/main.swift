@@ -15,9 +15,9 @@ struct CloudflaredE2ECLI {
         case serviceToken = "2"
     }
 
-    private struct ManualOAuthFlow: SSHOAuthFlow {
+    private struct ManualOAuthFlow: OAuthFlow {
         func fetchToken(teamDomain: String, appDomain: String, callbackScheme: String, hostname: String) async throws -> String {
-            let originURL = try SSHURLTools.normalizeOriginURL(from: hostname)
+            let originURL = try URLTools.normalizeOriginURL(from: hostname)
 
             print("")
             print("Open this protected app URL in your browser and complete Cloudflare Access login:")
@@ -30,7 +30,7 @@ struct CloudflaredE2ECLI {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard !token.isEmpty else {
-                throw SSHFailure.auth("oauth token input was empty")
+                throw Failure.auth("oauth token input was empty")
             }
 
             return token
@@ -40,7 +40,7 @@ struct CloudflaredE2ECLI {
     static func main() async {
         do {
             try await run()
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             fputs("Error: \(failure)\n", stderr)
             Foundation.exit(1)
         } catch {
@@ -56,14 +56,14 @@ struct CloudflaredE2ECLI {
         let hostname = try promptRequired("Cloudflare-protected hostname (e.g. ssh.example.com): ")
         let authChoice = try promptAuthChoice()
 
-        let authProvider: any SSHAuthProviding
-        let method: SSHAuthMethod
+        let authProvider: any AuthProviding
+        let method: AuthMethod
 
         switch authChoice {
         case .oauth:
-            let oauthProvider = SSHOAuthProvider(
+            let oauthProvider = OAuthProvider(
                 flow: ManualOAuthFlow(),
-                tokenStore: SSHInMemoryTokenStore()
+                tokenStore: InMemoryTokenStore()
             )
             authProvider = oauthProvider
             method = try await resolveOAuthMethod(hostname: hostname)
@@ -72,14 +72,14 @@ struct CloudflaredE2ECLI {
             let clientID = try promptRequired("Service token client ID: ")
             let clientSecret = try promptSecretRequired("Service token client secret: ")
 
-            authProvider = SSHServiceTokenProvider()
+            authProvider = ServiceTokenProvider()
             method = .serviceToken(teamDomain: "local", clientID: clientID, clientSecret: clientSecret)
         }
 
-        let session = SSHSessionActor(
+        let session = SessionActor(
             authProvider: authProvider,
-            tunnelProvider: SSHCloudflareTunnelProvider(),
-            retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 2, baseDelayNanoseconds: 500_000_000),
+            tunnelProvider: CloudflareTunnelProvider(),
+            retryPolicy: RetryPolicy(maxReconnectAttempts: 2, baseDelayNanoseconds: 500_000_000),
             oauthFallback: nil,
             sleep: { delay in
                 try? await Task.sleep(nanoseconds: delay)
@@ -120,19 +120,19 @@ struct CloudflaredE2ECLI {
         stateTask.cancel()
     }
 
-    private struct URLSessionHTTPClient: SSHHTTPClient {
+    private struct URLSessionHTTPClient: HTTPClient {
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                throw SSHFailure.protocolViolation("non-http response while resolving app info")
+                throw Failure.protocolViolation("non-http response while resolving app info")
             }
             return (data, http)
         }
     }
 
-    private static func resolveOAuthMethod(hostname: String) async throws -> SSHAuthMethod {
-        let originURL = try SSHURLTools.normalizeOriginURL(from: hostname)
-        let resolver = SSHAppInfoResolver(client: URLSessionHTTPClient(), userAgent: "cloudflared-e2e")
+    private static func resolveOAuthMethod(hostname: String) async throws -> AuthMethod {
+        let originURL = try URLTools.normalizeOriginURL(from: hostname)
+        let resolver = AppInfoResolver(client: URLSessionHTTPClient(), userAgent: "cloudflared-e2e")
 
         if let appInfo = try? await resolver.resolve(appURL: originURL) {
             return .oauth(
@@ -149,7 +149,7 @@ struct CloudflaredE2ECLI {
         )
     }
 
-    private static func describe(_ state: SSHConnectionState) -> String {
+    private static func describe(_ state: ConnectionState) -> String {
         switch state {
         case .idle:
             return "idle"
@@ -227,7 +227,7 @@ struct CloudflaredE2ECLI {
     private static func runTunnelProbe(localPort: UInt16) throws -> ProbeResult {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else {
-            throw SSHFailure.transport("probe failed to create socket", retryable: true)
+            throw Failure.transport("probe failed to create socket", retryable: true)
         }
         defer { _ = close(fd) }
 
@@ -240,7 +240,7 @@ struct CloudflaredE2ECLI {
 
         let pton = "127.0.0.1".withCString { inet_pton(AF_INET, $0, &address.sin_addr) }
         guard pton == 1 else {
-            throw SSHFailure.transport("probe failed to encode loopback", retryable: false)
+            throw Failure.transport("probe failed to encode loopback", retryable: false)
         }
 
         let connectResult = withUnsafePointer(to: &address) {
@@ -249,7 +249,7 @@ struct CloudflaredE2ECLI {
             }
         }
         guard connectResult == 0 else {
-            throw SSHFailure.transport("probe failed to connect to local tunnel", retryable: true)
+            throw Failure.transport("probe failed to connect to local tunnel", retryable: true)
         }
 
         var timeout = timeval(tv_sec: 2, tv_usec: 0)
@@ -266,7 +266,7 @@ struct CloudflaredE2ECLI {
         }
 
         if count == 0 {
-            throw SSHFailure.transport(
+            throw Failure.transport(
                 "probe socket closed immediately; Cloudflare auth/upstream connection likely failed",
                 retryable: false
             )
@@ -276,6 +276,6 @@ struct CloudflaredE2ECLI {
             return .openWithoutData
         }
 
-        throw SSHFailure.transport("probe recv failed with errno \(errno)", retryable: true)
+        throw Failure.transport("probe recv failed with errno \(errno)", retryable: true)
     }
 }

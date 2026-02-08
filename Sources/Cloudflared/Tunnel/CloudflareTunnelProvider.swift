@@ -6,17 +6,17 @@ import Darwin
 import Glibc
 #endif
 
-public protocol SSHWebSocketClient: Sendable {
+public protocol WebSocketClient: Sendable {
     func send(data: Data) async throws
     func receive() async throws -> Data?
     func close() async
 }
 
-public protocol SSHWebSocketDialing: Sendable {
-    func connect(request: URLRequest) async throws -> any SSHWebSocketClient
+public protocol WebSocketDialing: Sendable {
+    func connect(request: URLRequest) async throws -> any WebSocketClient
 }
 
-public struct SSHURLSessionWebSocketDialer: SSHWebSocketDialing {
+public struct URLSessionWebSocketDialer: WebSocketDialing {
     private let session: URLSession
 
     public init(configuration: URLSessionConfiguration = .default) {
@@ -27,14 +27,14 @@ public struct SSHURLSessionWebSocketDialer: SSHWebSocketDialing {
         self.session = session
     }
 
-    public func connect(request: URLRequest) async throws -> any SSHWebSocketClient {
+    public func connect(request: URLRequest) async throws -> any WebSocketClient {
         let task = session.webSocketTask(with: request)
         task.resume()
-        return SSHURLSessionWebSocketClient(task: task)
+        return URLSessionWebSocketClient(task: task)
     }
 }
 
-public final class SSHURLSessionWebSocketClient: @unchecked Sendable, SSHWebSocketClient {
+public final class URLSessionWebSocketClient: @unchecked Sendable, WebSocketClient {
     private let task: URLSessionWebSocketTask
 
     public init(task: URLSessionWebSocketTask) {
@@ -83,7 +83,7 @@ public final class SSHURLSessionWebSocketClient: @unchecked Sendable, SSHWebSock
     }
 }
 
-public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
+public actor CloudflareTunnelProvider: TunnelProviding {
     public typealias OriginURLResolver = @Sendable (String) throws -> URL
 
     public struct ConnectionLimits: Sendable, Equatable {
@@ -107,8 +107,8 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         case getsockname
     }
 
-    private let requestBuilder: SSHAccessRequestBuilder
-    private let websocketDialer: any SSHWebSocketDialing
+    private let requestBuilder: AccessRequestBuilder
+    private let websocketDialer: any WebSocketDialing
     private let originURLResolver: OriginURLResolver
     private let connectionLimits: ConnectionLimits
     private let faultInjection: FaultInjection?
@@ -119,10 +119,10 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
     private var bridgeSockets: [UUID: Int32] = [:]
 
     public init(
-        requestBuilder: SSHAccessRequestBuilder = SSHAccessRequestBuilder(),
-        websocketDialer: any SSHWebSocketDialing = SSHURLSessionWebSocketDialer(),
+        requestBuilder: AccessRequestBuilder = AccessRequestBuilder(),
+        websocketDialer: any WebSocketDialing = URLSessionWebSocketDialer(),
         originURLResolver: @escaping OriginURLResolver = { hostname in
-            try SSHURLTools.normalizeOriginURL(from: hostname)
+            try URLTools.normalizeOriginURL(from: hostname)
         },
         connectionLimits: ConnectionLimits = ConnectionLimits(),
         faultInjection: FaultInjection? = nil
@@ -134,17 +134,17 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         self.faultInjection = faultInjection
     }
 
-    public func open(hostname: String, authContext: SSHAuthContext, method: SSHAuthMethod) async throws -> UInt16 {
+    public func open(hostname: String, authContext: AuthContext, method: AuthMethod) async throws -> UInt16 {
         guard listeningSocket < 0 else {
-            throw SSHFailure.invalidState("tunnel already open")
+            throw Failure.invalidState("tunnel already open")
         }
 
         let originURL = try originURLResolver(hostname)
-        let websocketURL = try SSHURLTools.websocketURL(from: originURL)
+        let websocketURL = try URLTools.websocketURL(from: originURL)
 
         let socketFD = faultInjection == .socket ? -1 : Self.systemSocket(AF_INET, SOCK_STREAM, 0)
         guard socketFD >= 0 else {
-            throw SSHFailure.transport("failed to create socket", retryable: true)
+            throw Failure.transport("failed to create socket", retryable: true)
         }
 
         var reuse: Int32 = 1
@@ -164,7 +164,7 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
             : "127.0.0.1".withCString { inet_pton(AF_INET, $0, &address.sin_addr) }
         guard resultIP == 1 else {
             _ = Self.systemClose(socketFD)
-            throw SSHFailure.transport("failed to encode loopback address", retryable: false)
+            throw Failure.transport("failed to encode loopback address", retryable: false)
         }
 
         let bindResult: Int32
@@ -179,13 +179,13 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         }
         guard bindResult == 0 else {
             _ = Self.systemClose(socketFD)
-            throw SSHFailure.transport("failed to bind loopback listener", retryable: true)
+            throw Failure.transport("failed to bind loopback listener", retryable: true)
         }
 
         let listenResult = faultInjection == .listen ? -1 : listen(socketFD, SOMAXCONN)
         guard listenResult == 0 else {
             _ = Self.systemClose(socketFD)
-            throw SSHFailure.transport("failed to listen on loopback socket", retryable: true)
+            throw Failure.transport("failed to listen on loopback socket", retryable: true)
         }
 
         var boundAddress = sockaddr_in()
@@ -202,7 +202,7 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         }
         guard nameResult == 0 else {
             _ = Self.systemClose(socketFD)
-            throw SSHFailure.transport("failed to read local listener port", retryable: false)
+            throw Failure.transport("failed to read local listener port", retryable: false)
         }
 
         listeningSocket = socketFD
@@ -261,10 +261,10 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
     private func startBridge(
         clientFD: Int32,
         websocketURL: URL,
-        authContext: SSHAuthContext,
-        method: SSHAuthMethod,
-        requestBuilder: SSHAccessRequestBuilder,
-        websocketDialer: any SSHWebSocketDialing
+        authContext: AuthContext,
+        method: AuthMethod,
+        requestBuilder: AccessRequestBuilder,
+        websocketDialer: any WebSocketDialing
     ) async {
         Self.configureNoSigPipeIfSupported(fd: clientFD)
 
@@ -290,10 +290,10 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         clientFD: Int32,
         listenerFD: Int32,
         websocketURL: URL,
-        authContext: SSHAuthContext,
-        method: SSHAuthMethod,
-        requestBuilder: SSHAccessRequestBuilder,
-        websocketDialer: any SSHWebSocketDialing
+        authContext: AuthContext,
+        method: AuthMethod,
+        requestBuilder: AccessRequestBuilder,
+        websocketDialer: any WebSocketDialing
     ) async {
         // Cap active local clients to bound memory/file-descriptor pressure.
         guard bridgeTasks.count < connectionLimits.maxConcurrentConnections else {
@@ -334,14 +334,14 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
     private static func runBridge(
         clientFD: Int32,
         websocketURL: URL,
-        authContext: SSHAuthContext,
-        method: SSHAuthMethod,
-        requestBuilder: SSHAccessRequestBuilder,
-        websocketDialer: any SSHWebSocketDialing
+        authContext: AuthContext,
+        method: AuthMethod,
+        requestBuilder: AccessRequestBuilder,
+        websocketDialer: any WebSocketDialing
     ) async {
         let request = requestBuilder.build(originURL: websocketURL, authContext: authContext)
 
-        let websocketClient: any SSHWebSocketClient
+        let websocketClient: any WebSocketClient
         do {
             websocketClient = try await websocketDialer.connect(request: request)
         } catch {
@@ -378,7 +378,7 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         _ = method
     }
 
-    private static func pumpClientToWebSocket(clientFD: Int32, websocketClient: any SSHWebSocketClient) async {
+    private static func pumpClientToWebSocket(clientFD: Int32, websocketClient: any WebSocketClient) async {
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
 
         while !Task.isCancelled {
@@ -400,7 +400,7 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
         }
     }
 
-    private static func pumpWebSocketToClient(clientFD: Int32, websocketClient: any SSHWebSocketClient) async {
+    private static func pumpWebSocketToClient(clientFD: Int32, websocketClient: any WebSocketClient) async {
         while !Task.isCancelled {
             let payload: Data
             do {
@@ -488,12 +488,12 @@ public actor SSHCloudflareTunnelProvider: SSHTunnelProviding {
 }
 
 #if DEBUG
-extension SSHCloudflareTunnelProvider {
-    static func _testPumpClientToWebSocket(clientFD: Int32, websocketClient: any SSHWebSocketClient) async {
+extension CloudflareTunnelProvider {
+    static func _testPumpClientToWebSocket(clientFD: Int32, websocketClient: any WebSocketClient) async {
         await pumpClientToWebSocket(clientFD: clientFD, websocketClient: websocketClient)
     }
 
-    static func _testPumpWebSocketToClient(clientFD: Int32, websocketClient: any SSHWebSocketClient) async {
+    static func _testPumpWebSocketToClient(clientFD: Int32, websocketClient: any WebSocketClient) async {
         await pumpWebSocketToClient(clientFD: clientFD, websocketClient: websocketClient)
     }
 }

@@ -4,7 +4,7 @@ import Darwin
 import Glibc
 #endif
 
-public actor SSHLoopbackTunnelProvider: SSHTunnelProviding {
+public actor LoopbackTunnelProvider: TunnelProviding {
     public enum FaultInjection: Sendable, Equatable {
         case socket
         case inetPton
@@ -20,14 +20,14 @@ public actor SSHLoopbackTunnelProvider: SSHTunnelProviding {
         self.faultInjection = faultInjection
     }
 
-    public func open(hostname: String, authContext: SSHAuthContext, method: SSHAuthMethod) async throws -> UInt16 {
+    public func open(hostname: String, authContext: AuthContext, method: AuthMethod) async throws -> UInt16 {
         guard listeningSocket < 0 else {
-            throw SSHFailure.invalidState("tunnel already open")
+            throw Failure.invalidState("tunnel already open")
         }
 
         let socketFD = faultInjection == .socket ? -1 : systemSocket(AF_INET, SOCK_STREAM, 0)
         guard socketFD >= 0 else {
-            throw SSHFailure.transport("failed to create socket", retryable: true)
+            throw Failure.transport("failed to create socket", retryable: true)
         }
 
         var reuse: Int32 = 1
@@ -46,7 +46,7 @@ public actor SSHLoopbackTunnelProvider: SSHTunnelProviding {
             : "127.0.0.1".withCString { inet_pton(AF_INET, $0, &address.sin_addr) }
         guard resultIP == 1 else {
             _ = systemClose(socketFD)
-            throw SSHFailure.transport("failed to encode loopback address", retryable: false)
+            throw Failure.transport("failed to encode loopback address", retryable: false)
         }
 
         let bindResult: Int32
@@ -61,13 +61,13 @@ public actor SSHLoopbackTunnelProvider: SSHTunnelProviding {
         }
         guard bindResult == 0 else {
             _ = systemClose(socketFD)
-            throw SSHFailure.transport("failed to bind loopback listener", retryable: true)
+            throw Failure.transport("failed to bind loopback listener", retryable: true)
         }
 
         let listenResult = faultInjection == .listen ? -1 : listen(socketFD, SOMAXCONN)
         guard listenResult == 0 else {
             _ = systemClose(socketFD)
-            throw SSHFailure.transport("failed to listen on loopback socket", retryable: true)
+            throw Failure.transport("failed to listen on loopback socket", retryable: true)
         }
 
         var boundAddress = sockaddr_in()
@@ -84,7 +84,7 @@ public actor SSHLoopbackTunnelProvider: SSHTunnelProviding {
         }
         guard nameResult == 0 else {
             _ = systemClose(socketFD)
-            throw SSHFailure.transport("failed to read local listener port", retryable: false)
+            throw Failure.transport("failed to read local listener port", retryable: false)
         }
 
         listeningSocket = socketFD

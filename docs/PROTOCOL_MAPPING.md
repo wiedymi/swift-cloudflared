@@ -11,8 +11,8 @@ Upstream:
 
 Swift mapping:
 - Single session/tunnel abstraction for TCP/SSH workloads:
-  - `Sources/Cloudflared/Session/SSHSessionActor.swift`
-  - `Sources/Cloudflared/Tunnel/SSHTunnelProviding.swift`
+  - `Sources/Cloudflared/Session/SessionActor.swift`
+  - `Sources/Cloudflared/Tunnel/TunnelProviding.swift`
 
 ## 2. URL Normalization
 
@@ -21,11 +21,11 @@ Upstream:
 - `reference/cloudflared/cmd/cloudflared/access/validation.go:29-54`
 
 Swift mapping:
-- `SSHURLTools.normalizeOriginURL(from:)`:
+- `URLTools.normalizeOriginURL(from:)`:
   - adds https scheme when missing
   - forces https scheme
   - rejects empty/invalid host
-  - file: `Sources/Cloudflared/SSHURLTools.swift`
+  - file: `Sources/Cloudflared/URLTools.swift`
 
 ## 3. Access Header Contracts
 
@@ -43,9 +43,9 @@ Upstream:
 
 Swift mapping:
 - Header constants:
-  - `Sources/Cloudflared/SSHAccessHeaders.swift`
+  - `Sources/Cloudflared/AccessHeaders.swift`
 - Request builder:
-  - `Sources/Cloudflared/Tunnel/SSHAccessRequestBuilder.swift`
+  - `Sources/Cloudflared/Tunnel/AccessRequestBuilder.swift`
 
 ## 4. Access Redirect Detection and Token Invalidity Heuristic
 
@@ -60,9 +60,9 @@ Upstream:
 
 Swift mapping:
 - Redirect detection helper:
-  - `SSHURLTools.isAccessLoginRedirect(statusCode:location:)`
+  - `URLTools.isAccessLoginRedirect(statusCode:location:)`
 - Session retry/failure orchestration:
-  - `Sources/Cloudflared/Session/SSHSessionActor.swift`
+  - `Sources/Cloudflared/Session/SessionActor.swift`
 
 ## 5. WebSocket Dial Semantics
 
@@ -77,9 +77,9 @@ Upstream:
 
 Swift mapping:
 - Scheme conversion helper:
-  - `SSHURLTools.websocketURL(from:)`
+  - `URLTools.websocketURL(from:)`
 - Request header assembly abstraction:
-  - `SSHAccessRequestBuilder`
+  - `AccessRequestBuilder`
 
 Note:
 - Current package revision provides the abstraction and helpers; full production websocket carrier is an open item.
@@ -93,12 +93,12 @@ Upstream:
 - `reference/cloudflared/token/token.go:286-331`
 
 Swift mapping:
-- `SSHAppInfoResolver` sends `HEAD`.
-- `SSHAppInfoParser` resolves:
+- `AppInfoResolver` sends `HEAD`.
+- `AppInfoParser` resolves:
   - `authDomain`
   - `appAUD`
   - `appDomain`
-- file: `Sources/Cloudflared/Auth/SSHAppInfo.swift`
+- file: `Sources/Cloudflared/Auth/AppInfo.swift`
 
 ## 7. CLI Transfer/Login Endpoint Shape
 
@@ -112,7 +112,7 @@ Upstream:
 - `reference/cloudflared/token/transfer.go:85-106`
 
 Swift mapping:
-- OAuth fetch behavior is delegated behind `SSHOAuthFlow`.
+- OAuth fetch behavior is delegated behind `OAuthFlow`.
 - Host app can implement browser flow semantics equivalent to transfer/login helper.
 
 ## 8. Token Persistence and Expiry
@@ -123,9 +123,9 @@ Upstream:
 
 Swift mapping:
 - JWT expiration validator:
-  - `Sources/Cloudflared/Auth/SSHJWTValidator.swift`
+  - `Sources/Cloudflared/Auth/JWTValidator.swift`
 - token cache read/remove flow in OAuth provider:
-  - `Sources/Cloudflared/Auth/SSHAuthProviding.swift`
+  - `Sources/Cloudflared/Auth/AuthProviding.swift`
 
 ## 9. Short-Lived SSH Cert Endpoint (Future)
 

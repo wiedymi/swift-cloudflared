@@ -29,7 +29,7 @@ final class LocalWebSocketTestServer: @unchecked Sendable {
     func start() throws -> UInt16 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else {
-            throw SSHFailure.transport("failed to create test websocket socket", retryable: true)
+            throw Failure.transport("failed to create test websocket socket", retryable: true)
         }
 
         var reuse: Int32 = 1
@@ -52,12 +52,12 @@ final class LocalWebSocketTestServer: @unchecked Sendable {
         }
         guard bindResult == 0 else {
             _ = close(fd)
-            throw SSHFailure.transport("failed to bind test websocket socket", retryable: true)
+            throw Failure.transport("failed to bind test websocket socket", retryable: true)
         }
 
         guard listen(fd, SOMAXCONN) == 0 else {
             _ = close(fd)
-            throw SSHFailure.transport("failed to listen on test websocket socket", retryable: true)
+            throw Failure.transport("failed to listen on test websocket socket", retryable: true)
         }
 
         var bound = sockaddr_in()
@@ -69,7 +69,7 @@ final class LocalWebSocketTestServer: @unchecked Sendable {
         }
         guard nameResult == 0 else {
             _ = close(fd)
-            throw SSHFailure.transport("failed to read test websocket port", retryable: false)
+            throw Failure.transport("failed to read test websocket port", retryable: false)
         }
 
         listenFD = fd

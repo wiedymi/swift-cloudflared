@@ -53,10 +53,10 @@ Then add the library target:
 ```swift
 import Cloudflared
 
-let session = SSHSessionActor(
-    authProvider: SSHServiceTokenProvider(),
-    tunnelProvider: SSHCloudflareTunnelProvider(),
-    retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 2, baseDelayNanoseconds: 500_000_000),
+let session = SessionActor(
+    authProvider: ServiceTokenProvider(),
+    tunnelProvider: CloudflareTunnelProvider(),
+    retryPolicy: RetryPolicy(maxReconnectAttempts: 2, baseDelayNanoseconds: 500_000_000),
     oauthFallback: nil,
     sleep: { delay in try? await Task.sleep(nanoseconds: delay) }
 )
@@ -76,12 +76,12 @@ print("Tunnel endpoint: 127.0.0.1:\(localPort)")
 
 ## OAuth Flow Integration
 
-OAuth UI/token acquisition is app-owned via `SSHOAuthFlow`:
+OAuth UI/token acquisition is app-owned via `OAuthFlow`:
 
 ```swift
 import Cloudflared
 
-struct MyOAuthFlow: SSHOAuthFlow {
+struct MyOAuthFlow: OAuthFlow {
     func fetchToken(
         teamDomain: String,
         appDomain: String,
@@ -90,17 +90,17 @@ struct MyOAuthFlow: SSHOAuthFlow {
     ) async throws -> String {
         // Implement your Access login UX (for example ASWebAuthenticationSession)
         // and return CF_Authorization JWT.
-        throw SSHFailure.auth("not implemented")
+        throw Failure.auth("not implemented")
     }
 }
 
-let oauthProvider = SSHOAuthProvider(
+let oauthProvider = OAuthProvider(
     flow: MyOAuthFlow(),
-    tokenStore: SSHKeychainTokenStore()
+    tokenStore: KeychainTokenStore()
 )
 ```
 
-For app metadata discovery (`authDomain`, `appDomain`, `appAUD`) you can use `SSHAppInfoResolver`.
+For app metadata discovery (`authDomain`, `appDomain`, `appAUD`) you can use `AppInfoResolver`.
 
 ## State Stream
 
@@ -131,34 +131,34 @@ Example runtime mapping:
 
 ## Token Storage Customization
 
-If you need your own keychain layout or storage backend, implement `SSHTokenStore`:
+If you need your own keychain layout or storage backend, implement `TokenStore`:
 
 ```swift
 import Cloudflared
 
-actor CustomTokenStore: SSHTokenStore {
+actor CustomTokenStore: TokenStore {
     func readToken(for key: String) async throws -> String? { nil }
     func writeToken(_ token: String, for key: String) async throws {}
     func removeToken(for key: String) async throws {}
 }
 ```
 
-Then inject it into `SSHOAuthProvider`.
+Then inject it into `OAuthProvider`.
 
-`SSHKeychainTokenStore` defaults:
+`KeychainTokenStore` defaults:
 - iOS/tvOS/watchOS: `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
 - macOS: `kSecAttrAccessibleAfterFirstUnlock` + data-protection keychain mode
 
 ## Local Security Defaults
 
-`SSHCloudflareTunnelProvider` defaults to:
+`CloudflareTunnelProvider` defaults to:
 - `maxConcurrentConnections = 1`
 - `stopAcceptingAfterFirstConnection = true`
 
 You can override via:
 
 ```swift
-let tunnel = SSHCloudflareTunnelProvider(
+let tunnel = CloudflareTunnelProvider(
     connectionLimits: .init(
         maxConcurrentConnections: 2,
         stopAcceptingAfterFirstConnection: false
@@ -193,7 +193,7 @@ swift build
 Optional keychain integration test:
 
 ```bash
-CLOUDFLARED_KEYCHAIN_TESTS=1 swift test --filter SSHTokenStoreTests/testKeychainStoreRoundTrip
+CLOUDFLARED_KEYCHAIN_TESTS=1 swift test --filter TokenStoreTests/testKeychainStoreRoundTrip
 ```
 
 ## Docs

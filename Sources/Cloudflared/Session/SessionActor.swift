@@ -1,4 +1,4 @@
-public struct SSHRetryPolicy: Sendable, Equatable {
+public struct RetryPolicy: Sendable, Equatable {
     public let maxReconnectAttempts: Int
     public let baseDelayNanoseconds: UInt64
 
@@ -12,26 +12,26 @@ public struct SSHRetryPolicy: Sendable, Equatable {
     }
 }
 
-public actor SSHSessionActor: SSHClient {
-    public nonisolated let state: AsyncStream<SSHConnectionState>
+public actor SessionActor: Client {
+    public nonisolated let state: AsyncStream<ConnectionState>
 
-    private let authProvider: any SSHAuthProviding
-    private let tunnelProvider: any SSHTunnelProviding
-    private let retryPolicy: SSHRetryPolicy
-    private let oauthFallback: (@Sendable (String) -> SSHAuthMethod?)?
+    private let authProvider: any AuthProviding
+    private let tunnelProvider: any TunnelProviding
+    private let retryPolicy: RetryPolicy
+    private let oauthFallback: (@Sendable (String) -> AuthMethod?)?
     private let sleep: @Sendable (UInt64) async -> Void
 
-    private var continuation: AsyncStream<SSHConnectionState>.Continuation?
-    private var currentState: SSHConnectionState = .idle
+    private var continuation: AsyncStream<ConnectionState>.Continuation?
+    private var currentState: ConnectionState = .idle
 
     public init(
-        authProvider: any SSHAuthProviding,
-        tunnelProvider: any SSHTunnelProviding,
-        retryPolicy: SSHRetryPolicy,
-        oauthFallback: (@Sendable (String) -> SSHAuthMethod?)?,
+        authProvider: any AuthProviding,
+        tunnelProvider: any TunnelProviding,
+        retryPolicy: RetryPolicy,
+        oauthFallback: (@Sendable (String) -> AuthMethod?)?,
         sleep: @escaping @Sendable (UInt64) async -> Void
     ) {
-        var localContinuation: AsyncStream<SSHConnectionState>.Continuation?
+        var localContinuation: AsyncStream<ConnectionState>.Continuation?
         self.state = AsyncStream { continuation in
             continuation.yield(.idle)
             localContinuation = continuation
@@ -48,14 +48,14 @@ public actor SSHSessionActor: SSHClient {
 
     public nonisolated static func noopSleep(_: UInt64) async {}
 
-    public func connect(hostname: String, method: SSHAuthMethod) async throws -> UInt16 {
+    public func connect(hostname: String, method: AuthMethod) async throws -> UInt16 {
         guard canStartConnection(from: currentState) else {
-            let failure = SSHFailure.invalidState("cannot connect from state \(currentState)")
+            let failure = Failure.invalidState("cannot connect from state \(currentState)")
             publish(.failed(failure))
             throw failure
         }
 
-        let originURL = try SSHURLTools.normalizeOriginURL(from: hostname)
+        let originURL = try URLTools.normalizeOriginURL(from: hostname)
         let normalizedHost = originURL.host!
 
         do {
@@ -82,12 +82,12 @@ public actor SSHSessionActor: SSHClient {
         publish(.disconnected)
     }
 
-    private func connectWithMethod(hostname: String, method: SSHAuthMethod) async throws -> UInt16 {
+    private func connectWithMethod(hostname: String, method: AuthMethod) async throws -> UInt16 {
         publish(.authenticating)
         let authContext = try await authProvider.authenticate(hostname: hostname, method: method)
 
         var attempt = 0
-        var lastFailure = SSHFailure.transport("connection attempts exhausted", retryable: false)
+        var lastFailure = Failure.transport("connection attempts exhausted", retryable: false)
         while attempt <= retryPolicy.maxReconnectAttempts {
             publish(.connecting)
             do {
@@ -110,7 +110,7 @@ public actor SSHSessionActor: SSHClient {
         throw lastFailure
     }
 
-    private func canStartConnection(from state: SSHConnectionState) -> Bool {
+    private func canStartConnection(from state: ConnectionState) -> Bool {
         switch state {
         case .idle, .disconnected, .failed:
             return true
@@ -119,15 +119,15 @@ public actor SSHSessionActor: SSHClient {
         }
     }
 
-    private func toFailure(_ error: Error) -> SSHFailure {
-        if let failure = error as? SSHFailure {
+    private func toFailure(_ error: Error) -> Failure {
+        if let failure = error as? Failure {
             return failure
         }
 
         return .internalError(String(describing: error))
     }
 
-    private func publish(_ newState: SSHConnectionState) {
+    private func publish(_ newState: ConnectionState) {
         currentState = newState
         continuation?.yield(newState)
     }

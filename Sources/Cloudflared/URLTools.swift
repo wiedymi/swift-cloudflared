@@ -1,10 +1,10 @@
 import Foundation
 
-public enum SSHURLTools {
+public enum URLTools {
     public static func normalizeOriginURL(from hostname: String) throws -> URL {
         let trimmed = hostname.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            throw SSHFailure.configuration("hostname must not be empty")
+            throw Failure.configuration("hostname must not be empty")
         }
 
         let candidate: String
@@ -15,11 +15,11 @@ public enum SSHURLTools {
         }
 
         guard var components = URLComponents(string: candidate) else {
-            throw SSHFailure.configuration("hostname is not a valid URL")
+            throw Failure.configuration("hostname is not a valid URL")
         }
 
         guard let host = components.host, !host.isEmpty else {
-            throw SSHFailure.configuration("hostname is missing host")
+            throw Failure.configuration("hostname is missing host")
         }
 
         components.scheme = "https"
@@ -41,7 +41,7 @@ public enum SSHURLTools {
             components.scheme = "ws"
         default:
             let unsupportedScheme = components.scheme!
-            throw SSHFailure.protocolViolation("unsupported scheme \(unsupportedScheme)")
+            throw Failure.protocolViolation("unsupported scheme \(unsupportedScheme)")
         }
 
         return components.url!
@@ -52,6 +52,6 @@ public enum SSHURLTools {
             return false
         }
 
-        return location.path.hasPrefix(SSHAccessPath.login)
+        return location.path.hasPrefix(AccessPath.login)
     }
 }

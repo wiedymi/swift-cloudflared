@@ -7,13 +7,13 @@ import Darwin
 import Glibc
 #endif
 
-final class SSHCloudflareTunnelProviderTests: XCTestCase {
+final class CloudflareTunnelProviderTests: XCTestCase {
     private struct DummyError: Error {}
 
     func testOpenBuildsOAuthWebSocketRequest() async throws {
         let dialer = MockWebSocketDialer()
-        let provider = SSHCloudflareTunnelProvider(
-            requestBuilder: SSHAccessRequestBuilder(userAgent: "ua-test"),
+        let provider = CloudflareTunnelProvider(
+            requestBuilder: AccessRequestBuilder(userAgent: "ua-test"),
             websocketDialer: dialer
         )
 
@@ -35,7 +35,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         let request = try XCTUnwrap(maybeRequest)
         XCTAssertEqual(request.url?.scheme, "wss")
         XCTAssertEqual(request.url?.host, "ssh.example.com")
-        XCTAssertEqual(request.value(forHTTPHeaderField: SSHAccessHeader.accessToken), "jwt-token")
+        XCTAssertEqual(request.value(forHTTPHeaderField: AccessHeader.accessToken), "jwt-token")
         XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "ua-test")
 
         await provider.close()
@@ -43,7 +43,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
     func testOpenBuildsServiceTokenWebSocketRequest() async throws {
         let dialer = MockWebSocketDialer()
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: dialer)
+        let provider = CloudflareTunnelProvider(websocketDialer: dialer)
 
         let port = try await provider.open(
             hostname: "ssh.example.com",
@@ -61,15 +61,15 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
         let maybeRequest = await dialer.latestRequest()
         let request = try XCTUnwrap(maybeRequest)
-        XCTAssertEqual(request.value(forHTTPHeaderField: SSHAccessHeader.clientID), "id-1")
-        XCTAssertEqual(request.value(forHTTPHeaderField: SSHAccessHeader.clientSecret), "secret-1")
+        XCTAssertEqual(request.value(forHTTPHeaderField: AccessHeader.clientID), "id-1")
+        XCTAssertEqual(request.value(forHTTPHeaderField: AccessHeader.clientSecret), "secret-1")
 
         await provider.close()
     }
 
     func testBridgeForwardsClientToWebSocket() async throws {
         let dialer = MockWebSocketDialer()
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: dialer)
+        let provider = CloudflareTunnelProvider(websocketDialer: dialer)
 
         let port = try await provider.open(
             hostname: "ssh.example.com",
@@ -99,7 +99,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
     func testBridgeForwardsWebSocketToClient() async throws {
         let dialer = MockWebSocketDialer()
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: dialer)
+        let provider = CloudflareTunnelProvider(websocketDialer: dialer)
 
         let port = try await provider.open(
             hostname: "ssh.example.com",
@@ -126,7 +126,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testSecondOpenFails() async throws {
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: MockWebSocketDialer())
+        let provider = CloudflareTunnelProvider(websocketDialer: MockWebSocketDialer())
         _ = try await provider.open(
             hostname: "ssh.example.com",
             authContext: .appToken("jwt"),
@@ -140,7 +140,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected invalid state")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .invalidState("tunnel already open"))
         }
 
@@ -148,10 +148,10 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testOriginResolverErrorBubblesUp() async {
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: MockWebSocketDialer(),
             originURLResolver: { _ in
-                throw SSHFailure.configuration("bad origin")
+                throw Failure.configuration("bad origin")
             }
         )
 
@@ -162,7 +162,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .configuration("bad origin"))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -170,7 +170,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testCloseWithoutOpenIsNoOp() async {
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: MockWebSocketDialer())
+        let provider = CloudflareTunnelProvider(websocketDialer: MockWebSocketDialer())
         await provider.close()
     }
 
@@ -179,7 +179,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         let wsPort = try server.start()
         defer { server.stop() }
 
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             originURLResolver: { _ in
                 try XCTUnwrap(URL(string: "http://127.0.0.1:\(wsPort)"))
             }
@@ -206,7 +206,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         let wsPort = try server.start()
         defer { server.stop() }
 
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             originURLResolver: { _ in
                 try XCTUnwrap(URL(string: "http://127.0.0.1:\(wsPort)"))
             }
@@ -233,7 +233,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         defer { server.stop() }
 
         let session = URLSession(configuration: .ephemeral)
-        let dialer = SSHURLSessionWebSocketDialer(session: session)
+        let dialer = URLSessionWebSocketDialer(session: session)
         let request = URLRequest(url: try XCTUnwrap(URL(string: "ws://127.0.0.1:\(wsPort)")))
 
         let client = try await dialer.connect(request: request)
@@ -245,7 +245,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         let wsPort = try server.start()
         defer { server.stop() }
 
-        let dialer = SSHURLSessionWebSocketDialer(session: URLSession(configuration: .ephemeral))
+        let dialer = URLSessionWebSocketDialer(session: URLSession(configuration: .ephemeral))
         let request = URLRequest(url: try XCTUnwrap(URL(string: "ws://127.0.0.1:\(wsPort)")))
 
         let client = try await dialer.connect(request: request)
@@ -260,7 +260,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testURLSessionClientDecodeNilFallback() {
-        XCTAssertNil(SSHURLSessionWebSocketClient.decode(nil))
+        XCTAssertNil(URLSessionWebSocketClient.decode(nil))
     }
 
     func testPumpClientToWebSocketReturnsOnEOF() async throws {
@@ -269,7 +269,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         _ = close(peerFD)
 
         let client = ScriptedWebSocketClient()
-        await SSHCloudflareTunnelProvider._testPumpClientToWebSocket(
+        await CloudflareTunnelProvider._testPumpClientToWebSocket(
             clientFD: clientFD,
             websocketClient: client
         )
@@ -290,7 +290,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
             task?.cancel()
         }
 
-        await SSHCloudflareTunnelProvider._testPumpWebSocketToClient(
+        await CloudflareTunnelProvider._testPumpWebSocketToClient(
             clientFD: clientFD,
             websocketClient: client
         )
@@ -301,7 +301,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         let scripted = ScriptedWebSocketClient(sendError: DummyError())
         await dialer.enqueueClient(scripted)
 
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: dialer,
             connectionLimits: .init(maxConcurrentConnections: 2, stopAcceptingAfterFirstConnection: false)
         )
@@ -345,7 +345,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
     func testDefaultStopsAcceptingAfterFirstConnection() async throws {
         let dialer = MockWebSocketDialer()
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: dialer)
+        let provider = CloudflareTunnelProvider(websocketDialer: dialer)
 
         let port = try await provider.open(
             hostname: "ssh.example.com",
@@ -373,7 +373,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
     func testConnectionCapRejectsExcessClients() async throws {
         let dialer = MockWebSocketDialer()
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: dialer,
             connectionLimits: .init(maxConcurrentConnections: 1, stopAcceptingAfterFirstConnection: false)
         )
@@ -404,7 +404,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
     func testDialerFailureClosesAcceptedClientSocket() async throws {
         let dialer = MockWebSocketDialer(connectError: DummyError())
-        let provider = SSHCloudflareTunnelProvider(websocketDialer: dialer)
+        let provider = CloudflareTunnelProvider(websocketDialer: dialer)
 
         let port = try await provider.open(
             hostname: "ssh.example.com",
@@ -429,7 +429,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionSocketFailure() async {
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: MockWebSocketDialer(),
             faultInjection: .socket
         )
@@ -441,7 +441,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to create socket", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -449,7 +449,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionInetPtonFailure() async {
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: MockWebSocketDialer(),
             faultInjection: .inetPton
         )
@@ -461,7 +461,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to encode loopback address", retryable: false))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -469,7 +469,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionBindFailure() async {
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: MockWebSocketDialer(),
             faultInjection: .bind
         )
@@ -481,7 +481,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to bind loopback listener", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -489,7 +489,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionListenFailure() async {
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: MockWebSocketDialer(),
             faultInjection: .listen
         )
@@ -501,7 +501,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to listen on loopback socket", retryable: true))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -509,7 +509,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 
     func testFaultInjectionGetsocknameFailure() async {
-        let provider = SSHCloudflareTunnelProvider(
+        let provider = CloudflareTunnelProvider(
             websocketDialer: MockWebSocketDialer(),
             faultInjection: .getsockname
         )
@@ -521,7 +521,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
                 method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .transport("failed to read local listener port", retryable: false))
         } catch {
             XCTFail("unexpected error: \(error)")
@@ -531,7 +531,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     private func makeClientSocket(port: UInt16) throws -> Int32 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else {
-            throw SSHFailure.transport("failed to create client socket", retryable: true)
+            throw Failure.transport("failed to create client socket", retryable: true)
         }
 
         var address = sockaddr_in()
@@ -550,7 +550,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
 
         guard result == 0 else {
             _ = close(fd)
-            throw SSHFailure.transport("failed to connect to local listener", retryable: true)
+            throw Failure.transport("failed to connect to local listener", retryable: true)
         }
 
         return fd
@@ -560,7 +560,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
         var fds: [Int32] = [-1, -1]
         let result = socketpair(AF_UNIX, Int32(SOCK_STREAM), 0, &fds)
         guard result == 0 else {
-            throw SSHFailure.transport("failed to create socketpair", retryable: true)
+            throw Failure.transport("failed to create socketpair", retryable: true)
         }
         return (fds[0], fds[1])
     }
@@ -630,7 +630,7 @@ final class SSHCloudflareTunnelProviderTests: XCTestCase {
     }
 }
 
-actor MockWebSocketDialer: SSHWebSocketDialing {
+actor MockWebSocketDialer: WebSocketDialing {
     private let connectError: Error?
     private(set) var requests: [URLRequest] = []
     private(set) var clients: [ScriptedWebSocketClient] = []
@@ -640,7 +640,7 @@ actor MockWebSocketDialer: SSHWebSocketDialing {
         self.connectError = connectError
     }
 
-    func connect(request: URLRequest) async throws -> any SSHWebSocketClient {
+    func connect(request: URLRequest) async throws -> any WebSocketClient {
         if let connectError {
             requests.append(request)
             throw connectError
@@ -670,7 +670,7 @@ actor MockWebSocketDialer: SSHWebSocketDialing {
     }
 }
 
-final class ScriptedWebSocketClient: @unchecked Sendable, SSHWebSocketClient {
+final class ScriptedWebSocketClient: @unchecked Sendable, WebSocketClient {
     private let sentQueue = DispatchQueue(label: "test.ws.sent")
     private var sentDataFrames: [Data] = []
     private var sendCalls: Int = 0

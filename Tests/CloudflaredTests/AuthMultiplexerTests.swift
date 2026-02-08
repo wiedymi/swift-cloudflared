@@ -1,9 +1,9 @@
 import XCTest
 @testable import Cloudflared
 
-final class SSHAuthMultiplexerTests: XCTestCase {
+final class AuthMultiplexerTests: XCTestCase {
     func testRoutesOAuthRequestsToOAuthProvider() async throws {
-        let multiplexer = SSHAuthMultiplexer(
+        let multiplexer = AuthMultiplexer(
             oauthProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             serviceProvider: ClosureAuthProvider { _, _ in .serviceToken(id: "id", secret: "secret") }
         )
@@ -17,7 +17,7 @@ final class SSHAuthMultiplexerTests: XCTestCase {
     }
 
     func testRoutesServiceRequestsToServiceProvider() async throws {
-        let multiplexer = SSHAuthMultiplexer(
+        let multiplexer = AuthMultiplexer(
             oauthProvider: ClosureAuthProvider { _, _ in .appToken("jwt") },
             serviceProvider: ClosureAuthProvider { _, _ in .serviceToken(id: "id", secret: "secret") }
         )
@@ -27,13 +27,13 @@ final class SSHAuthMultiplexerTests: XCTestCase {
             method: .serviceToken(teamDomain: "team", clientID: "id", clientSecret: "secret")
         )
 
-        XCTAssertEqual(context.headers[SSHAccessHeader.clientID], "id")
+        XCTAssertEqual(context.headers[AccessHeader.clientID], "id")
     }
 
     func testFallsBackToOAuthWhenConfigured() async throws {
-        let multiplexer = SSHAuthMultiplexer(
+        let multiplexer = AuthMultiplexer(
             oauthProvider: ClosureAuthProvider { _, _ in .appToken("oauth-token") },
-            serviceProvider: ClosureAuthProvider { _, _ in throw SSHFailure.auth("service denied") },
+            serviceProvider: ClosureAuthProvider { _, _ in throw Failure.auth("service denied") },
             oauthFallback: { _ in
                 .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
             }
@@ -48,9 +48,9 @@ final class SSHAuthMultiplexerTests: XCTestCase {
     }
 
     func testServiceErrorWithoutFallbackIsPropagated() async {
-        let multiplexer = SSHAuthMultiplexer(
+        let multiplexer = AuthMultiplexer(
             oauthProvider: ClosureAuthProvider { _, _ in .appToken("oauth-token") },
-            serviceProvider: ClosureAuthProvider { _, _ in throw SSHFailure.auth("service denied") },
+            serviceProvider: ClosureAuthProvider { _, _ in throw Failure.auth("service denied") },
             oauthFallback: nil
         )
 
@@ -60,7 +60,7 @@ final class SSHAuthMultiplexerTests: XCTestCase {
                 method: .serviceToken(teamDomain: "team", clientID: "id", clientSecret: "secret")
             )
             XCTFail("expected failure")
-        } catch let failure as SSHFailure {
+        } catch let failure as Failure {
             XCTAssertEqual(failure, .auth("service denied"))
         } catch {
             XCTFail("unexpected error: \(error)")

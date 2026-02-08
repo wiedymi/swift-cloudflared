@@ -1,10 +1,10 @@
 import Foundation
 
-public protocol SSHClock: Sendable {
+public protocol TokenClock: Sendable {
     var now: Date { get }
 }
 
-public struct SSHSystemClock: SSHClock {
+public struct SystemClock: TokenClock {
     public init() {}
 
     public var now: Date {
@@ -12,10 +12,10 @@ public struct SSHSystemClock: SSHClock {
     }
 }
 
-public struct SSHJWTValidator: Sendable {
-    private let clock: any SSHClock
+public struct JWTValidator: Sendable {
+    private let clock: any TokenClock
 
-    public init(clock: any SSHClock = SSHSystemClock()) {
+    public init(clock: any TokenClock = SystemClock()) {
         self.clock = clock
     }
 
@@ -26,7 +26,7 @@ public struct SSHJWTValidator: Sendable {
     public func expirationDate(from token: String) throws -> Date {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else {
-            throw SSHFailure.auth("token is not a JWT")
+            throw Failure.auth("token is not a JWT")
         }
 
         let payloadData = try decodeBase64URL(String(parts[1]))
@@ -36,7 +36,7 @@ public struct SSHJWTValidator: Sendable {
             let object = payload as? [String: Any],
             let exp = object["exp"] as? TimeInterval
         else {
-            throw SSHFailure.auth("token missing exp claim")
+            throw Failure.auth("token missing exp claim")
         }
 
         return Date(timeIntervalSince1970: exp)
@@ -53,7 +53,7 @@ public struct SSHJWTValidator: Sendable {
         }
 
         guard let data = Data(base64Encoded: base64) else {
-            throw SSHFailure.auth("invalid JWT payload encoding")
+            throw Failure.auth("invalid JWT payload encoding")
         }
 
         return data

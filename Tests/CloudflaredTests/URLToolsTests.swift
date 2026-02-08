@@ -1,15 +1,15 @@
 import XCTest
 @testable import Cloudflared
 
-final class SSHURLToolsTests: XCTestCase {
+final class URLToolsTests: XCTestCase {
     func testNormalizeAddsHTTPS() throws {
-        let url = try SSHURLTools.normalizeOriginURL(from: "ssh.example.com")
+        let url = try URLTools.normalizeOriginURL(from: "ssh.example.com")
         XCTAssertEqual(url.scheme, "https")
         XCTAssertEqual(url.host, "ssh.example.com")
     }
 
     func testNormalizeConvertsHTTPToHTTPS() throws {
-        let url = try SSHURLTools.normalizeOriginURL(from: "http://ssh.example.com:8443/path")
+        let url = try URLTools.normalizeOriginURL(from: "http://ssh.example.com:8443/path")
         XCTAssertEqual(url.scheme, "https")
         XCTAssertEqual(url.host, "ssh.example.com")
         XCTAssertEqual(url.port, 8443)
@@ -17,17 +17,17 @@ final class SSHURLToolsTests: XCTestCase {
     }
 
     func testNormalizeRejectsEmptyHostname() {
-        XCTAssertThrowsError(try SSHURLTools.normalizeOriginURL(from: "  ")) { error in
-            XCTAssertEqual(error as? SSHFailure, .configuration("hostname must not be empty"))
+        XCTAssertThrowsError(try URLTools.normalizeOriginURL(from: "  ")) { error in
+            XCTAssertEqual(error as? Failure, .configuration("hostname must not be empty"))
         }
     }
 
     func testNormalizeRejectsMissingHost() {
-        XCTAssertThrowsError(try SSHURLTools.normalizeOriginURL(from: "https:///path"))
+        XCTAssertThrowsError(try URLTools.normalizeOriginURL(from: "https:///path"))
     }
 
     func testNormalizeRejectsInvalidURLComponents() {
-        XCTAssertThrowsError(try SSHURLTools.normalizeOriginURL(from: "https://[::1"))
+        XCTAssertThrowsError(try URLTools.normalizeOriginURL(from: "https://[::1"))
     }
 
     func testWebsocketURLConversion() throws {
@@ -37,25 +37,25 @@ final class SSHURLToolsTests: XCTestCase {
         let ws = try XCTUnwrap(URL(string: "ws://ssh.example.com/path"))
         let noScheme = try XCTUnwrap(URL(string: "ssh.example.com/path"))
 
-        XCTAssertEqual(try SSHURLTools.websocketURL(from: https).scheme, "wss")
-        XCTAssertEqual(try SSHURLTools.websocketURL(from: http).scheme, "ws")
-        XCTAssertEqual(try SSHURLTools.websocketURL(from: wss).scheme, "wss")
-        XCTAssertEqual(try SSHURLTools.websocketURL(from: ws).scheme, "ws")
-        XCTAssertEqual(try SSHURLTools.websocketURL(from: noScheme).scheme, "ws")
+        XCTAssertEqual(try URLTools.websocketURL(from: https).scheme, "wss")
+        XCTAssertEqual(try URLTools.websocketURL(from: http).scheme, "ws")
+        XCTAssertEqual(try URLTools.websocketURL(from: wss).scheme, "wss")
+        XCTAssertEqual(try URLTools.websocketURL(from: ws).scheme, "ws")
+        XCTAssertEqual(try URLTools.websocketURL(from: noScheme).scheme, "ws")
     }
 
     func testWebsocketURLRejectsUnsupportedScheme() throws {
         let ftp = try XCTUnwrap(URL(string: "ftp://ssh.example.com"))
-        XCTAssertThrowsError(try SSHURLTools.websocketURL(from: ftp))
+        XCTAssertThrowsError(try URLTools.websocketURL(from: ftp))
     }
 
     func testAccessRedirectDetection() throws {
         let loginURL = try XCTUnwrap(URL(string: "https://team.cloudflareaccess.com/cdn-cgi/access/login?kid=abc"))
         let otherURL = try XCTUnwrap(URL(string: "https://team.cloudflareaccess.com/hello"))
 
-        XCTAssertTrue(SSHURLTools.isAccessLoginRedirect(statusCode: 302, location: loginURL))
-        XCTAssertFalse(SSHURLTools.isAccessLoginRedirect(statusCode: 200, location: loginURL))
-        XCTAssertFalse(SSHURLTools.isAccessLoginRedirect(statusCode: 302, location: otherURL))
-        XCTAssertFalse(SSHURLTools.isAccessLoginRedirect(statusCode: 302, location: nil))
+        XCTAssertTrue(URLTools.isAccessLoginRedirect(statusCode: 302, location: loginURL))
+        XCTAssertFalse(URLTools.isAccessLoginRedirect(statusCode: 200, location: loginURL))
+        XCTAssertFalse(URLTools.isAccessLoginRedirect(statusCode: 302, location: otherURL))
+        XCTAssertFalse(URLTools.isAccessLoginRedirect(statusCode: 302, location: nil))
     }
 }

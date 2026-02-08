@@ -9,30 +9,30 @@
 
 ## 2. Implemented Modules
 
-- `Sources/Cloudflared/SSHTypes.swift`
+- `Sources/Cloudflared/Types.swift`
   - Public auth method, error taxonomy, state model, client protocol.
-- `Sources/Cloudflared/Auth/SSHAuthProviding.swift`
-  - `SSHOAuthProvider`
-  - `SSHServiceTokenProvider`
-  - `SSHAuthMultiplexer`
-- `Sources/Cloudflared/Auth/SSHJWTValidator.swift`
+- `Sources/Cloudflared/Auth/AuthProviding.swift`
+  - `OAuthProvider`
+  - `ServiceTokenProvider`
+  - `AuthMultiplexer`
+- `Sources/Cloudflared/Auth/JWTValidator.swift`
   - JWT `exp` validation for cached/fresh tokens.
-- `Sources/Cloudflared/Auth/SSHTokenStore.swift`
+- `Sources/Cloudflared/Auth/TokenStore.swift`
   - In-memory token store (testable baseline).
-- `Sources/Cloudflared/Auth/SSHKeychainTokenStore.swift`
+- `Sources/Cloudflared/Auth/KeychainTokenStore.swift`
   - iOS/tvOS/watchOS keychain-backed store.
-- `Sources/Cloudflared/Auth/SSHAppInfo.swift`
+- `Sources/Cloudflared/Auth/AppInfo.swift`
   - Access app metadata parser/resolver from `HEAD` response.
-- `Sources/Cloudflared/Tunnel/SSHAccessRequestBuilder.swift`
+- `Sources/Cloudflared/Tunnel/AccessRequestBuilder.swift`
   - Header construction for Access token/service token/jump destination.
-- `Sources/Cloudflared/Tunnel/SSHLoopbackTunnelProvider.swift`
+- `Sources/Cloudflared/Tunnel/LoopbackTunnelProvider.swift`
   - Loopback listener lifecycle, fault injection points for tests.
-- `Sources/Cloudflared/Session/SSHSessionActor.swift`
+- `Sources/Cloudflared/Session/SessionActor.swift`
   - Connection orchestrator + retry/fallback state machine.
 
 ## 3. Concurrency and Isolation
 
-- `SSHSessionActor` is the single writer for:
+- `SessionActor` is the single writer for:
   - connection lifecycle state
   - transition publication over `AsyncStream`
   - retry/fallback decisions
@@ -43,12 +43,12 @@
 
 1. Validate and normalize hostname.
 2. Publish `.authenticating`.
-3. Resolve `SSHAuthContext` via selected auth provider.
+3. Resolve `AuthContext` via selected auth provider.
 4. Attempt tunnel open:
   - publish `.connecting`
   - on retryable transport failure, publish `.reconnecting(attempt:)` and backoff
 5. On success publish `.connected(localPort:)`.
-6. On failure publish `.failed(SSHFailure)`.
+6. On failure publish `.failed(Failure)`.
 7. On explicit disconnect call provider `close()` and publish `.disconnected`.
 
 ## 5. Auth Architecture
@@ -56,23 +56,23 @@
 - OAuth path:
   - consult token store cache
   - validate JWT expiry
-  - fetch new token via `SSHOAuthFlow` when cache is missing/invalid
+  - fetch new token via `OAuthFlow` when cache is missing/invalid
 - Service token path:
   - validate non-empty ID/secret
-  - produce `SSHAuthContext` headers only
+  - produce `AuthContext` headers only
 - Multiplexer:
-  - routes by `SSHAuthMethod`
+  - routes by `AuthMethod`
   - optional fallback from service token failure to OAuth method
 
 ## 6. Tunnel Abstraction
 
-- `SSHTunnelProviding` is the boundary between policy/orchestration and network transport.
+- `TunnelProviding` is the boundary between policy/orchestration and network transport.
 - Current implementation is loopback-focused test transport.
 - Production connector can be added behind the same protocol without changing session API.
 
 ## 7. Failure Model
 
-- `SSHFailure.transport(_, retryable: Bool)` drives reconnect decisions.
+- `Failure.transport(_, retryable: Bool)` drives reconnect decisions.
 - All unknown errors are wrapped as `.internalError`.
 - Invalid state transitions are explicit `.invalidState`.
 
