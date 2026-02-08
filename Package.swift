@@ -17,9 +17,15 @@ let package = Package(
             targets: ["CloudflaredE2E"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/bitmark-inc/tweetnacl-swiftwrap.git", from: "1.1.0")
+    ],
     targets: [
         .target(
             name: "Cloudflared",
+            dependencies: [
+                .product(name: "TweetNacl", package: "tweetnacl-swiftwrap")
+            ],
             path: "Sources/Cloudflared"
         ),
         .executableTarget(
