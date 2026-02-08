@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+
+# Xcode user data
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+
+# Xcode / Swift build artifacts
+DerivedData/
+.build/
+build/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Dependency managers
+Pods/
+Carthage/Build/
+
+# Fastlane outputs
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# Archives and symbols
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+
+# Local env and secrets
+.env
+.env.*
+*.p12
+*.mobileprovision
