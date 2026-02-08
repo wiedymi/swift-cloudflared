@@ -2,33 +2,35 @@
 import PackageDescription
 
 let package = Package(
-    name: "swift-cloudflared",
+    name: "Cloudflared",
     platforms: [
         .iOS(.v16),
         .macOS(.v13)
     ],
     products: [
         .library(
-            name: "SwiftCloudflared",
-            targets: ["SwiftCloudflared"]
+            name: "Cloudflared",
+            targets: ["Cloudflared"]
         ),
         .executable(
-            name: "swift-cloudflared-e2e",
-            targets: ["SwiftCloudflaredE2E"]
+            name: "cloudflared-e2e",
+            targets: ["CloudflaredE2E"]
         )
     ],
     targets: [
         .target(
-            name: "SwiftCloudflared"
+            name: "Cloudflared",
+            path: "Sources/Cloudflared"
         ),
         .executableTarget(
-            name: "SwiftCloudflaredE2E",
-            dependencies: ["SwiftCloudflared"],
+            name: "CloudflaredE2E",
+            dependencies: ["Cloudflared"],
             path: "Examples/E2E"
         ),
         .testTarget(
-            name: "SwiftCloudflaredTests",
-            dependencies: ["SwiftCloudflared"]
+            name: "CloudflaredTests",
+            dependencies: ["Cloudflared"],
+            path: "Tests/CloudflaredTests"
         )
     ]
 )

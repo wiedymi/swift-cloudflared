@@ -21,34 +21,34 @@ Current result:
 ## 2. Requirement-to-Test Matrix
 
 - FR-1 Auth modes:
-  - `Tests/SwiftCloudflaredTests/CFSSHOAuthProviderTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHServiceTokenProviderTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHAuthMultiplexerTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHSessionActorTests.swift`
+  - `Tests/CloudflaredTests/SSHOAuthProviderTests.swift`
+  - `Tests/CloudflaredTests/SSHServiceTokenProviderTests.swift`
+  - `Tests/CloudflaredTests/SSHAuthMultiplexerTests.swift`
+  - `Tests/CloudflaredTests/SSHSessionActorTests.swift`
 
 - FR-2 Token lifecycle:
-  - `Tests/SwiftCloudflaredTests/CFSSHJWTValidatorTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHOAuthProviderTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHTokenStoreTests.swift`
+  - `Tests/CloudflaredTests/SSHJWTValidatorTests.swift`
+  - `Tests/CloudflaredTests/SSHOAuthProviderTests.swift`
+  - `Tests/CloudflaredTests/SSHTokenStoreTests.swift`
 
 - FR-3 Access protocol semantics:
-  - `Tests/SwiftCloudflaredTests/CFSSHAccessRequestBuilderTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHURLToolsTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHAppInfoTests.swift`
+  - `Tests/CloudflaredTests/SSHAccessRequestBuilderTests.swift`
+  - `Tests/CloudflaredTests/SSHURLToolsTests.swift`
+  - `Tests/CloudflaredTests/SSHAppInfoTests.swift`
 
 - FR-4 Session and retry:
-  - `Tests/SwiftCloudflaredTests/CFSSHSessionActorTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHLoopbackTunnelProviderTests.swift`
+  - `Tests/CloudflaredTests/SSHSessionActorTests.swift`
+  - `Tests/CloudflaredTests/SSHLoopbackTunnelProviderTests.swift`
 
 - FR-5 Public API and failure model:
-  - `Tests/SwiftCloudflaredTests/CFSSHTypesTests.swift`
-  - `Tests/SwiftCloudflaredTests/CFSSHSessionActorTests.swift`
+  - `Tests/CloudflaredTests/SSHTypesTests.swift`
+  - `Tests/CloudflaredTests/SSHSessionActorTests.swift`
 
 ## 3. Fault Injection Coverage
 
 Transport and lifecycle failure paths are explicitly covered by:
-- `Tests/SwiftCloudflaredTests/CFSSHLoopbackTunnelProviderTests.swift`
-- `Tests/SwiftCloudflaredTests/CFSSHSessionActorTests.swift`
+- `Tests/CloudflaredTests/SSHLoopbackTunnelProviderTests.swift`
+- `Tests/CloudflaredTests/SSHSessionActorTests.swift`
 
 This includes:
 - bind/listen/socket/getsockname failures

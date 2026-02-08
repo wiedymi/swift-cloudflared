@@ -48,7 +48,7 @@ Integration contract:
 
 - SDK must accept OAuth and service-token methods per connection.
 - SDK must optionally support service-token-to-OAuth fallback.
-- SDK must produce a normalized `CFSSHAuthContext` for transport layer.
+- SDK must produce a normalized `SSHAuthContext` for transport layer.
 
 ### FR-2 Token Lifecycle
 
@@ -75,7 +75,7 @@ Integration contract:
 - SDK must provide:
   - `connect(hostname:method:) async throws -> UInt16`
   - `disconnect() async`
-  - `state: AsyncStream<CFSSHConnectionState>`
+  - `state: AsyncStream<SSHConnectionState>`
 - SDK must provide typed failure taxonomy:
   - invalidState
   - auth
@@ -98,7 +98,7 @@ Integration contract:
 
 ## 6. Acceptance Criteria
 
-- AC-1 Auth providers produce correct `CFSSHAuthContext` for both modes.
+- AC-1 Auth providers produce correct `SSHAuthContext` for both modes.
 - AC-2 Access request builder emits expected headers and preserves custom headers.
 - AC-3 Session actor publishes expected state sequences for:
   - success path
@@ -134,6 +134,6 @@ Expected gate for this revision:
 
 ## 9. Open Items
 
-- Implement production Access websocket transport provider behind `CFSSHTunnelProviding`.
+- Implement production Access websocket transport provider behind `SSHTunnelProviding`.
 - Add integration harness for real Cloudflare Access-protected test origin.
 - Add optional short-lived SSH cert flow (`/cdn-cgi/access/cert_sign`) as v2 extension.

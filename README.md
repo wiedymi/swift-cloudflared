@@ -43,7 +43,7 @@ Then add the library target:
 .target(
     name: "YourApp",
     dependencies: [
-        .product(name: "SwiftCloudflared", package: "swift-cloudflared")
+        .product(name: "Cloudflared", package: "swift-cloudflared")
     ]
 )
 ```
@@ -51,12 +51,12 @@ Then add the library target:
 ## Quick Start (Service Token)
 
 ```swift
-import SwiftCloudflared
+import Cloudflared
 
-let session = CFSSHSessionActor(
-    authProvider: CFSSHServiceTokenProvider(),
-    tunnelProvider: CFSSHCloudflareTunnelProvider(),
-    retryPolicy: CFSSHRetryPolicy(maxReconnectAttempts: 2, baseDelayNanoseconds: 500_000_000),
+let session = SSHSessionActor(
+    authProvider: SSHServiceTokenProvider(),
+    tunnelProvider: SSHCloudflareTunnelProvider(),
+    retryPolicy: SSHRetryPolicy(maxReconnectAttempts: 2, baseDelayNanoseconds: 500_000_000),
     oauthFallback: nil,
     sleep: { delay in try? await Task.sleep(nanoseconds: delay) }
 )
@@ -76,12 +76,12 @@ print("Tunnel endpoint: 127.0.0.1:\(localPort)")
 
 ## OAuth Flow Integration
 
-OAuth UI/token acquisition is app-owned via `CFSSHOAuthFlow`:
+OAuth UI/token acquisition is app-owned via `SSHOAuthFlow`:
 
 ```swift
-import SwiftCloudflared
+import Cloudflared
 
-struct MyOAuthFlow: CFSSHOAuthFlow {
+struct MyOAuthFlow: SSHOAuthFlow {
     func fetchToken(
         teamDomain: String,
         appDomain: String,
@@ -90,17 +90,17 @@ struct MyOAuthFlow: CFSSHOAuthFlow {
     ) async throws -> String {
         // Implement your Access login UX (for example ASWebAuthenticationSession)
         // and return CF_Authorization JWT.
-        throw CFSSHFailure.auth("not implemented")
+        throw SSHFailure.auth("not implemented")
     }
 }
 
-let oauthProvider = CFSSHOAuthProvider(
+let oauthProvider = SSHOAuthProvider(
     flow: MyOAuthFlow(),
-    tokenStore: CFSSHKeychainTokenStore()
+    tokenStore: SSHKeychainTokenStore()
 )
 ```
 
-For app metadata discovery (`authDomain`, `appDomain`, `appAUD`) you can use `CFSSHAppInfoResolver`.
+For app metadata discovery (`authDomain`, `appDomain`, `appAUD`) you can use `SSHAppInfoResolver`.
 
 ## State Stream
 
@@ -131,34 +131,34 @@ Example runtime mapping:
 
 ## Token Storage Customization
 
-If you need your own keychain layout or storage backend, implement `CFSSHTokenStore`:
+If you need your own keychain layout or storage backend, implement `SSHTokenStore`:
 
 ```swift
-import SwiftCloudflared
+import Cloudflared
 
-actor CustomTokenStore: CFSSHTokenStore {
+actor CustomTokenStore: SSHTokenStore {
     func readToken(for key: String) async throws -> String? { nil }
     func writeToken(_ token: String, for key: String) async throws {}
     func removeToken(for key: String) async throws {}
 }
 ```
 
-Then inject it into `CFSSHOAuthProvider`.
+Then inject it into `SSHOAuthProvider`.
 
-`CFSSHKeychainTokenStore` defaults:
+`SSHKeychainTokenStore` defaults:
 - iOS/tvOS/watchOS: `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`
 - macOS: `kSecAttrAccessibleAfterFirstUnlock` + data-protection keychain mode
 
 ## Local Security Defaults
 
-`CFSSHCloudflareTunnelProvider` defaults to:
+`SSHCloudflareTunnelProvider` defaults to:
 - `maxConcurrentConnections = 1`
 - `stopAcceptingAfterFirstConnection = true`
 
 You can override via:
 
 ```swift
-let tunnel = CFSSHCloudflareTunnelProvider(
+let tunnel = SSHCloudflareTunnelProvider(
     connectionLimits: .init(
         maxConcurrentConnections: 2,
         stopAcceptingAfterFirstConnection: false
@@ -178,7 +178,7 @@ let tunnel = CFSSHCloudflareTunnelProvider(
 Run the local interactive harness:
 
 ```bash
-swift run swift-cloudflared-e2e
+swift run cloudflared-e2e
 ```
 
 It prints a local endpoint (`127.0.0.1:<port>`) you can test with SSH/libssh2.
@@ -193,7 +193,7 @@ swift build
 Optional keychain integration test:
 
 ```bash
-SWIFT_CLOUDFLARED_KEYCHAIN_TESTS=1 swift test --filter CFSSHTokenStoreTests/testKeychainStoreRoundTrip
+CLOUDFLARED_KEYCHAIN_TESTS=1 swift test --filter SSHTokenStoreTests/testKeychainStoreRoundTrip
 ```
 
 ## Docs
