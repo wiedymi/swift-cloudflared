@@ -112,6 +112,7 @@ public actor CloudflareTunnelProvider: TunnelProviding {
     private let originURLResolver: OriginURLResolver
     private let connectionLimits: ConnectionLimits
     private let faultInjection: FaultInjection?
+    private static let ioRetryNanoseconds: UInt64 = 2_000_000
 
     private var listeningSocket: Int32 = -1
     private var acceptTask: Task<Void, Never>?
@@ -187,6 +188,7 @@ public actor CloudflareTunnelProvider: TunnelProviding {
             _ = Self.systemClose(socketFD)
             throw Failure.transport("failed to listen on loopback socket", retryable: true)
         }
+        Self.configureNonBlocking(fd: socketFD)
 
         var boundAddress = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -211,21 +213,34 @@ public actor CloudflareTunnelProvider: TunnelProviding {
         let websocketDialer = self.websocketDialer
 
         acceptTask = Task.detached(priority: .utility) {
-            while true {
+            while !Task.isCancelled {
                 let clientFD = Self.systemAccept(socketFD)
-                if clientFD < 0 {
+                if clientFD >= 0 {
+                    await self.handleAcceptedClient(
+                        clientFD: clientFD,
+                        listenerFD: socketFD,
+                        websocketURL: websocketURL,
+                        authContext: authContext,
+                        method: method,
+                        requestBuilder: requestBuilder,
+                        websocketDialer: websocketDialer
+                    )
+                    continue
+                }
+
+                let errorCode = errno
+                if Self.isInterrupted(errorCode) {
+                    continue
+                }
+                if Self.isWouldBlock(errorCode) {
+                    try? await Task.sleep(nanoseconds: Self.ioRetryNanoseconds)
+                    continue
+                }
+                if Self.isListenerClosed(errorCode) {
                     break
                 }
 
-                await self.handleAcceptedClient(
-                    clientFD: clientFD,
-                    listenerFD: socketFD,
-                    websocketURL: websocketURL,
-                    authContext: authContext,
-                    method: method,
-                    requestBuilder: requestBuilder,
-                    websocketDialer: websocketDialer
-                )
+                break
             }
         }
 
@@ -267,6 +282,7 @@ public actor CloudflareTunnelProvider: TunnelProviding {
         websocketDialer: any WebSocketDialing
     ) async {
         Self.configureNoSigPipeIfSupported(fd: clientFD)
+        Self.configureNonBlocking(fd: clientFD)
 
         let bridgeID = UUID()
         bridgeSockets[bridgeID] = clientFD
@@ -395,6 +411,14 @@ public actor CloudflareTunnelProvider: TunnelProviding {
             } else if readCount == 0 {
                 return
             } else {
+                let errorCode = errno
+                if isInterrupted(errorCode) {
+                    continue
+                }
+                if isWouldBlock(errorCode) {
+                    try? await Task.sleep(nanoseconds: ioRetryNanoseconds)
+                    continue
+                }
                 return
             }
         }
@@ -416,33 +440,50 @@ public actor CloudflareTunnelProvider: TunnelProviding {
                 continue
             }
 
-            if !writeAll(fd: clientFD, data: payload) {
+            if !(await writeAll(fd: clientFD, data: payload)) {
                 return
             }
         }
     }
 
-    private static func writeAll(fd: Int32, data: Data) -> Bool {
+    private static func writeAll(fd: Int32, data: Data) async -> Bool {
+        let payload = [UInt8](data)
         var written = 0
-        let total = data.count
+        let total = payload.count
 
-        return data.withUnsafeBytes { rawBuffer in
-            let base = rawBuffer.bindMemory(to: UInt8.self).baseAddress!
-
-            while written < total {
-                let pointer = base.advanced(by: written)
-                let result = write(fd, pointer, total - written)
-
-                if result > 0 {
-                    written += result
-                    continue
-                }
-
+        while written < total {
+            if Task.isCancelled {
                 return false
             }
 
-            return true
+            let result = payload.withUnsafeBytes { rawBuffer -> Int in
+                guard let base = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                    return -1
+                }
+                let pointer = base.advanced(by: written)
+                return write(fd, pointer, total - written)
+            }
+
+            if result > 0 {
+                written += result
+                continue
+            }
+
+            if result < 0 {
+                let errorCode = errno
+                if isInterrupted(errorCode) {
+                    continue
+                }
+                if isWouldBlock(errorCode) {
+                    try? await Task.sleep(nanoseconds: ioRetryNanoseconds)
+                    continue
+                }
+            }
+
+            return false
         }
+
+        return true
     }
 
     private nonisolated static func systemSocket(_ domain: Int32, _ type: Int32, _ proto: Int32) -> Int32 {
@@ -484,6 +525,26 @@ public actor CloudflareTunnelProvider: TunnelProviding {
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
         }
     #endif
+    }
+
+    private nonisolated static func configureNonBlocking(fd: Int32) {
+        let flags = fcntl(fd, F_GETFL)
+        guard flags >= 0 else {
+            return
+        }
+        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+    }
+
+    private nonisolated static func isWouldBlock(_ errorCode: Int32) -> Bool {
+        errorCode == EAGAIN || errorCode == EWOULDBLOCK
+    }
+
+    private nonisolated static func isInterrupted(_ errorCode: Int32) -> Bool {
+        errorCode == EINTR
+    }
+
+    private nonisolated static func isListenerClosed(_ errorCode: Int32) -> Bool {
+        errorCode == EBADF || errorCode == EINVAL
     }
 }
 

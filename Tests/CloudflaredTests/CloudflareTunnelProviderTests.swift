@@ -402,6 +402,40 @@ final class CloudflareTunnelProviderTests: XCTestCase {
         await provider.close()
     }
 
+    func testAcceptLoopHandlesManyIdleClients() async throws {
+        let dialer = MockWebSocketDialer()
+        let provider = CloudflareTunnelProvider(
+            websocketDialer: dialer,
+            connectionLimits: .init(maxConcurrentConnections: 128, stopAcceptingAfterFirstConnection: false)
+        )
+
+        let port = try await provider.open(
+            hostname: "ssh.example.com",
+            authContext: .appToken("jwt"),
+            method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
+        )
+
+        var fds: [Int32] = []
+        fds.reserveCapacity(24)
+        defer {
+            for fd in fds {
+                _ = close(fd)
+            }
+        }
+
+        for _ in 0..<24 {
+            let fd = try makeClientSocket(port: port)
+            fds.append(fd)
+        }
+
+        let allAccepted = await waitUntil(timeoutNanoseconds: 1_500_000_000) {
+            await dialer.requestCount() >= 24
+        }
+        XCTAssertTrue(allAccepted, "accept loop stalled while idle clients were connected")
+
+        await provider.close()
+    }
+
     func testDialerFailureClosesAcceptedClientSocket() async throws {
         let dialer = MockWebSocketDialer(connectError: DummyError())
         let provider = CloudflareTunnelProvider(websocketDialer: dialer)
@@ -659,6 +693,10 @@ actor MockWebSocketDialer: WebSocketDialing {
 
     func latestRequest() -> URLRequest? {
         requests.last
+    }
+
+    func requestCount() -> Int {
+        requests.count
     }
 
     func latestClient() -> ScriptedWebSocketClient? {
