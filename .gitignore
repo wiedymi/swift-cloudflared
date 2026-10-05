@@ -35,3 +35,6 @@ fastlane/test_output/
 .env.*
 *.p12
 *.mobileprovision
+
+# Optional upstream reference checkout; never a package dependency.
+/reference/cloudflared/

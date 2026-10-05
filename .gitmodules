@@ -1,3 +1,0 @@
-[submodule "reference/cloudflared"]
-	path = reference/cloudflared
-	url = https://github.com/cloudflare/cloudflared.git

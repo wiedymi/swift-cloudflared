@@ -216,7 +216,13 @@ CLOUDFLARED_KEYCHAIN_TESTS=1 swift test --filter TokenStoreTests/testKeychainSto
 
 ## Repository Notes
 
-- `reference/cloudflared` is included as a git submodule for upstream reference.
+The Swift package does not download upstream reference source. To inspect the
+source cited in `docs/PROTOCOL_MAPPING.md`, fetch an optional ignored checkout:
+
+```sh
+git clone --filter=blob:none --no-checkout --no-recurse-submodules https://github.com/cloudflare/cloudflared.git reference/cloudflared
+git -C reference/cloudflared checkout 66587173e2cd5b2ea6d495e97aec6551e5e18c30
+```
 
 ## License
 

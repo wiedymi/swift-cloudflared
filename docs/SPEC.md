@@ -130,7 +130,7 @@ Expected gate for this revision:
 - `Network.framework` (transport implementation extensions)
 - `AuthenticationServices` (host OAuth implementation)
 - `Security` (keychain-backed token store for mobile Apple targets)
-- `reference/cloudflared` git submodule for protocol/reference validation
+- Optional `reference/cloudflared` checkout for protocol/reference validation; not a package dependency
 
 ## 9. Open Items
 
