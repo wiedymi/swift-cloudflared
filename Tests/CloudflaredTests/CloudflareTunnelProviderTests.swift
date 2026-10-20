@@ -169,6 +169,52 @@ final class CloudflareTunnelProviderTests: XCTestCase {
         }
     }
 
+    func testConcurrentCloseWaitsForCleanupAndAllowsReopenAfterward() async throws {
+        let client = PausedCloseWebSocketClient()
+        let provider = CloudflareTunnelProvider(websocketDialer: SingleWebSocketDialer(client: client))
+        let port = try await provider.open(
+            hostname: "ssh.example.com",
+            authContext: .appToken("jwt"),
+            method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
+        )
+        let fd = try makeClientSocket(port: port)
+        defer { _ = close(fd) }
+        let receiving = await waitUntil { await client.isReceiving }
+        XCTAssertTrue(receiving)
+
+        let firstClose = Task { await provider.close() }
+        let closing = await waitUntil { await client.closeStarted }
+        XCTAssertTrue(closing)
+
+        let secondCompleted = expectation(description: "second close completed before cleanup")
+        secondCompleted.isInverted = true
+        let secondClose = Task {
+            await provider.close()
+            secondCompleted.fulfill()
+        }
+        await fulfillment(of: [secondCompleted], timeout: 0.1)
+        do {
+            _ = try await provider.open(
+                hostname: "ssh.example.com",
+                authContext: .appToken("jwt"),
+                method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
+            )
+            XCTFail("open must wait for close cleanup")
+        } catch let failure as Failure {
+            XCTAssertEqual(failure, .invalidState("tunnel already open"))
+        }
+
+        await client.finishClose()
+        await firstClose.value
+        await secondClose.value
+        _ = try await provider.open(
+            hostname: "ssh.example.com",
+            authContext: .appToken("jwt"),
+            method: .oauth(teamDomain: "team", appDomain: "app", callbackScheme: "cb")
+        )
+        await provider.close()
+    }
+
     func testCloseWithoutOpenIsNoOp() async {
         let provider = CloudflareTunnelProvider(websocketDialer: MockWebSocketDialer())
         await provider.close()
@@ -265,12 +311,13 @@ final class CloudflareTunnelProviderTests: XCTestCase {
 
     func testPumpClientToWebSocketReturnsOnEOF() async throws {
         let (clientFD, peerFD) = try makeSocketPair()
-        defer { _ = close(clientFD) }
+        let clientSocket = try SocketHandle(clientFD)
+        defer { clientSocket.close() }
         _ = close(peerFD)
 
         let client = ScriptedWebSocketClient()
         await CloudflareTunnelProvider._testPumpClientToWebSocket(
-            clientFD: clientFD,
+            clientSocket: clientSocket,
             websocketClient: client
         )
 
@@ -280,8 +327,9 @@ final class CloudflareTunnelProviderTests: XCTestCase {
 
     func testPumpWebSocketToClientReturnsWhenCancelled() async throws {
         let (clientFD, peerFD) = try makeSocketPair()
+        let clientSocket = try SocketHandle(clientFD)
         defer {
-            _ = close(clientFD)
+            clientSocket.close()
             _ = close(peerFD)
         }
 
@@ -291,7 +339,7 @@ final class CloudflareTunnelProviderTests: XCTestCase {
         }
 
         await CloudflareTunnelProvider._testPumpWebSocketToClient(
-            clientFD: clientFD,
+            clientSocket: clientSocket,
             websocketClient: client
         )
     }
@@ -661,6 +709,42 @@ final class CloudflareTunnelProviderTests: XCTestCase {
             try? await Task.sleep(nanoseconds: pollNanoseconds)
         }
         return false
+    }
+}
+
+private struct SingleWebSocketDialer: WebSocketDialing {
+    let client: any WebSocketClient
+
+    func connect(request: URLRequest) async throws -> any WebSocketClient { client }
+}
+
+private actor PausedCloseWebSocketClient: WebSocketClient {
+    private var receiveContinuation: CheckedContinuation<Data?, Never>?
+    private var closeContinuation: CheckedContinuation<Void, Never>?
+    private(set) var closeStarted = false
+    private var canFinishClose = false
+
+    var isReceiving: Bool { receiveContinuation != nil }
+
+    func send(data: Data) async throws {}
+
+    func receive() async throws -> Data? {
+        await withCheckedContinuation { receiveContinuation = $0 }
+    }
+
+    func close() async {
+        closeStarted = true
+        receiveContinuation?.resume(returning: nil)
+        receiveContinuation = nil
+        if !canFinishClose {
+            await withCheckedContinuation { closeContinuation = $0 }
+        }
+    }
+
+    func finishClose() {
+        canFinishClose = true
+        closeContinuation?.resume()
+        closeContinuation = nil
     }
 }
 

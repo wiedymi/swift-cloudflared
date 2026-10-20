@@ -114,10 +114,10 @@ public actor CloudflareTunnelProvider: TunnelProviding {
     private let faultInjection: FaultInjection?
     private static let ioRetryNanoseconds: UInt64 = 2_000_000
 
-    private var listeningSocket: Int32 = -1
+    private var listener: SocketHandle?
+    private var closeTask: Task<Void, Never>?
     private var acceptTask: Task<Void, Never>?
-    private var bridgeTasks: [UUID: Task<Void, Never>] = [:]
-    private var bridgeSockets: [UUID: Int32] = [:]
+    private var bridges: [UUID: (socket: SocketHandle, task: Task<Void, Never>)] = [:]
 
     public init(
         requestBuilder: AccessRequestBuilder = AccessRequestBuilder(),
@@ -136,7 +136,7 @@ public actor CloudflareTunnelProvider: TunnelProviding {
     }
 
     public func open(hostname: String, authContext: AuthContext, method: AuthMethod) async throws -> UInt16 {
-        guard listeningSocket < 0 else {
+        guard listener == nil, closeTask == nil else {
             throw Failure.invalidState("tunnel already open")
         }
 
@@ -188,7 +188,6 @@ public actor CloudflareTunnelProvider: TunnelProviding {
             _ = Self.systemClose(socketFD)
             throw Failure.transport("failed to listen on loopback socket", retryable: true)
         }
-        Self.configureNonBlocking(fd: socketFD)
 
         var boundAddress = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -207,23 +206,18 @@ public actor CloudflareTunnelProvider: TunnelProviding {
             throw Failure.transport("failed to read local listener port", retryable: false)
         }
 
-        listeningSocket = socketFD
-
-        let requestBuilder = self.requestBuilder
-        let websocketDialer = self.websocketDialer
+        let listener = try SocketHandle(socketFD)
+        self.listener = listener
 
         acceptTask = Task.detached(priority: .utility) {
             while !Task.isCancelled {
-                let clientFD = Self.systemAccept(socketFD)
+                guard let clientFD = listener.withFileDescriptor(Self.systemAccept) else { break }
                 if clientFD >= 0 {
                     await self.handleAcceptedClient(
                         clientFD: clientFD,
-                        listenerFD: socketFD,
+                        listener: listener,
                         websocketURL: websocketURL,
-                        authContext: authContext,
-                        method: method,
-                        requestBuilder: requestBuilder,
-                        websocketDialer: websocketDialer
+                        authContext: authContext
                     )
                     continue
                 }
@@ -248,110 +242,77 @@ public actor CloudflareTunnelProvider: TunnelProviding {
     }
 
     public func close() async {
-        if listeningSocket >= 0 {
-            _ = Self.systemShutdown(listeningSocket)
-            _ = Self.systemClose(listeningSocket)
-            listeningSocket = -1
+        if let closeTask {
+            await closeTask.value
+            return
         }
 
-        acceptTask?.cancel()
+        let listenerTask = acceptTask
         acceptTask = nil
+        listenerTask?.cancel()
+        listener?.close()
+        listener = nil
 
-        let sockets = Array(bridgeSockets.values)
-        for fd in sockets {
-            _ = Self.systemShutdown(fd)
-            _ = Self.systemClose(fd)
+        let activeBridges = Array(bridges.values)
+        bridges.removeAll()
+        for bridge in activeBridges {
+            bridge.task.cancel()
+            bridge.socket.shutdown()
         }
 
-        let tasks = Array(bridgeTasks.values)
-        bridgeTasks.removeAll()
-        bridgeSockets.removeAll()
-
-        for task in tasks {
-            task.cancel()
-            _ = await task.result
+        let cleanup = Task {
+            await listenerTask?.value
+            for bridge in activeBridges {
+                await bridge.task.value
+            }
+            self.closeTask = nil
         }
+        closeTask = cleanup
+        await cleanup.value
     }
 
-    private func startBridge(
+    private func handleAcceptedClient(
         clientFD: Int32,
+        listener: SocketHandle,
         websocketURL: URL,
-        authContext: AuthContext,
-        method: AuthMethod,
-        requestBuilder: AccessRequestBuilder,
-        websocketDialer: any WebSocketDialing
-    ) async {
-        Self.configureNoSigPipeIfSupported(fd: clientFD)
-        Self.configureNonBlocking(fd: clientFD)
+        authContext: AuthContext
+    ) {
+        guard let clientSocket = try? SocketHandle(clientFD) else { return }
+        guard self.listener === listener, closeTask == nil, !Task.isCancelled,
+              bridges.count < connectionLimits.maxConcurrentConnections else {
+            clientSocket.close()
+            return
+        }
+
+        if connectionLimits.stopAcceptingAfterFirstConnection {
+            acceptTask?.cancel()
+            listener.close()
+        }
 
         let bridgeID = UUID()
-        bridgeSockets[bridgeID] = clientFD
-
+        let requestBuilder = self.requestBuilder
+        let websocketDialer = self.websocketDialer
         let bridgeTask = Task.detached(priority: .utility) { [weak self] in
             await Self.runBridge(
-                clientFD: clientFD,
+                clientSocket: clientSocket,
                 websocketURL: websocketURL,
                 authContext: authContext,
-                method: method,
                 requestBuilder: requestBuilder,
                 websocketDialer: websocketDialer
             )
             await self?.bridgeFinished(id: bridgeID)
         }
-
-        bridgeTasks[bridgeID] = bridgeTask
-    }
-
-    private func handleAcceptedClient(
-        clientFD: Int32,
-        listenerFD: Int32,
-        websocketURL: URL,
-        authContext: AuthContext,
-        method: AuthMethod,
-        requestBuilder: AccessRequestBuilder,
-        websocketDialer: any WebSocketDialing
-    ) async {
-        // Cap active local clients to bound memory/file-descriptor pressure.
-        guard bridgeTasks.count < connectionLimits.maxConcurrentConnections else {
-            _ = Self.systemShutdown(clientFD)
-            _ = Self.systemClose(clientFD)
-            return
-        }
-
-        // Secure default: first accepted local client wins and listener is closed.
-        if connectionLimits.stopAcceptingAfterFirstConnection {
-            closeListenerIfStillOpen(expectedFD: listenerFD)
-        }
-
-        await startBridge(
-            clientFD: clientFD,
-            websocketURL: websocketURL,
-            authContext: authContext,
-            method: method,
-            requestBuilder: requestBuilder,
-            websocketDialer: websocketDialer
-        )
-    }
-
-    private func closeListenerIfStillOpen(expectedFD: Int32) {
-        guard listeningSocket == expectedFD else {
-            return
-        }
-        _ = Self.systemShutdown(listeningSocket)
-        _ = Self.systemClose(listeningSocket)
-        listeningSocket = -1
+        bridges[bridgeID] = (clientSocket, bridgeTask)
     }
 
     private func bridgeFinished(id: UUID) {
-        bridgeTasks[id] = nil
-        bridgeSockets[id] = nil
+        bridges[id] = nil
     }
 
     private static func runBridge(
-        clientFD: Int32,
+        clientSocket: SocketHandle,
         websocketURL: URL,
         authContext: AuthContext,
-        method: AuthMethod,
         requestBuilder: AccessRequestBuilder,
         websocketDialer: any WebSocketDialing
     ) async {
@@ -361,46 +322,41 @@ public actor CloudflareTunnelProvider: TunnelProviding {
         do {
             websocketClient = try await websocketDialer.connect(request: request)
         } catch {
-            _ = systemShutdown(clientFD)
-            _ = systemClose(clientFD)
+            clientSocket.close()
             return
         }
 
         defer {
-            _ = systemShutdown(clientFD)
-            _ = systemClose(clientFD)
+            clientSocket.close()
         }
 
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
-                await pumpClientToWebSocket(clientFD: clientFD, websocketClient: websocketClient)
+                await pumpClientToWebSocket(clientSocket: clientSocket, websocketClient: websocketClient)
             }
             group.addTask {
-                await pumpWebSocketToClient(clientFD: clientFD, websocketClient: websocketClient)
+                await pumpWebSocketToClient(clientSocket: clientSocket, websocketClient: websocketClient)
             }
 
             _ = await group.next()
             group.cancelAll()
 
-            _ = systemShutdown(clientFD)
+            clientSocket.shutdown()
             await websocketClient.close()
 
             while await group.next() != nil {}
         }
-
-        await websocketClient.close()
-
-        // Keep interface stable for future method-dependent transport decisions.
-        _ = method
     }
 
-    private static func pumpClientToWebSocket(clientFD: Int32, websocketClient: any WebSocketClient) async {
+    private static func pumpClientToWebSocket(clientSocket: SocketHandle, websocketClient: any WebSocketClient) async {
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
 
         while !Task.isCancelled {
-            let readCount = buffer.withUnsafeMutableBytes { rawBuffer in
-                read(clientFD, rawBuffer.baseAddress, rawBuffer.count)
-            }
+            guard let readCount = clientSocket.withFileDescriptor({ fd in
+                buffer.withUnsafeMutableBytes { rawBuffer in
+                    read(fd, rawBuffer.baseAddress, rawBuffer.count)
+                }
+            }) else { return }
 
             if readCount > 0 {
                 do {
@@ -424,7 +380,7 @@ public actor CloudflareTunnelProvider: TunnelProviding {
         }
     }
 
-    private static func pumpWebSocketToClient(clientFD: Int32, websocketClient: any WebSocketClient) async {
+    private static func pumpWebSocketToClient(clientSocket: SocketHandle, websocketClient: any WebSocketClient) async {
         while !Task.isCancelled {
             let payload: Data
             do {
@@ -440,13 +396,13 @@ public actor CloudflareTunnelProvider: TunnelProviding {
                 continue
             }
 
-            if !(await writeAll(fd: clientFD, data: payload)) {
+            if !(await writeAll(socket: clientSocket, data: payload)) {
                 return
             }
         }
     }
 
-    private static func writeAll(fd: Int32, data: Data) async -> Bool {
+    private static func writeAll(socket: SocketHandle, data: Data) async -> Bool {
         let payload = [UInt8](data)
         var written = 0
         let total = payload.count
@@ -456,13 +412,19 @@ public actor CloudflareTunnelProvider: TunnelProviding {
                 return false
             }
 
-            let result = payload.withUnsafeBytes { rawBuffer -> Int in
-                guard let base = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
-                    return -1
+            guard let result = socket.withFileDescriptor({ fd in
+                payload.withUnsafeBytes { rawBuffer -> Int in
+                    guard let base = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                        return -1
+                    }
+                    let pointer = base.advanced(by: written)
+                #if canImport(Darwin)
+                    return Darwin.send(fd, pointer, total - written, 0)
+                #else
+                    return Glibc.send(fd, pointer, total - written, Int32(MSG_NOSIGNAL))
+                #endif
                 }
-                let pointer = base.advanced(by: written)
-                return write(fd, pointer, total - written)
-            }
+            }) else { return false }
 
             if result > 0 {
                 written += result
@@ -502,37 +464,12 @@ public actor CloudflareTunnelProvider: TunnelProviding {
     #endif
     }
 
-    private nonisolated static func systemShutdown(_ fd: Int32) -> Int32 {
-    #if canImport(Darwin)
-        Darwin.shutdown(fd, SHUT_RDWR)
-    #else
-        Glibc.shutdown(fd, Int32(SHUT_RDWR))
-    #endif
-    }
-
     private nonisolated static func systemClose(_ fd: Int32) -> Int32 {
     #if canImport(Darwin)
         Darwin.close(fd)
     #else
         Glibc.close(fd)
     #endif
-    }
-
-    private nonisolated static func configureNoSigPipeIfSupported(fd: Int32) {
-    #if canImport(Darwin)
-        var value: Int32 = 1
-        _ = withUnsafePointer(to: &value) {
-            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
-        }
-    #endif
-    }
-
-    private nonisolated static func configureNonBlocking(fd: Int32) {
-        let flags = fcntl(fd, F_GETFL)
-        guard flags >= 0 else {
-            return
-        }
-        _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
     }
 
     private nonisolated static func isWouldBlock(_ errorCode: Int32) -> Bool {
@@ -550,12 +487,12 @@ public actor CloudflareTunnelProvider: TunnelProviding {
 
 #if DEBUG
 extension CloudflareTunnelProvider {
-    static func _testPumpClientToWebSocket(clientFD: Int32, websocketClient: any WebSocketClient) async {
-        await pumpClientToWebSocket(clientFD: clientFD, websocketClient: websocketClient)
+    static func _testPumpClientToWebSocket(clientSocket: SocketHandle, websocketClient: any WebSocketClient) async {
+        await pumpClientToWebSocket(clientSocket: clientSocket, websocketClient: websocketClient)
     }
 
-    static func _testPumpWebSocketToClient(clientFD: Int32, websocketClient: any WebSocketClient) async {
-        await pumpWebSocketToClient(clientFD: clientFD, websocketClient: websocketClient)
+    static func _testPumpWebSocketToClient(clientSocket: SocketHandle, websocketClient: any WebSocketClient) async {
+        await pumpWebSocketToClient(clientSocket: clientSocket, websocketClient: websocketClient)
     }
 }
 #endif

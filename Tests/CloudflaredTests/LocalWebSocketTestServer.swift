@@ -16,10 +16,11 @@ final class LocalWebSocketTestServer: @unchecked Sendable {
 
     private let frames: [OutgoingFrame]
     private let keepOpenMillis: UInt32
+    private let lock = NSLock()
+    private let workerFinished = DispatchGroup()
 
     private var listenFD: Int32 = -1
     private var clientFD: Int32 = -1
-    private var worker: Thread?
 
     init(frames: [OutgoingFrame] = [], keepOpenMillis: UInt32 = 300) {
         self.frames = frames
@@ -59,6 +60,10 @@ final class LocalWebSocketTestServer: @unchecked Sendable {
             _ = close(fd)
             throw Failure.transport("failed to listen on test websocket socket", retryable: true)
         }
+        guard fcntl(fd, F_SETFL, O_NONBLOCK) == 0 else {
+            _ = close(fd)
+            throw Failure.transport("failed to configure test websocket listener", retryable: false)
+        }
 
         var bound = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
@@ -72,45 +77,85 @@ final class LocalWebSocketTestServer: @unchecked Sendable {
             throw Failure.transport("failed to read test websocket port", retryable: false)
         }
 
+        lock.lock()
         listenFD = fd
+        lock.unlock()
 
-        let thread = Thread { [weak self] in
-            self?.serveOneConnection()
+        workerFinished.enter()
+        let thread = Thread {
+            self.serveOneConnection(listenerFD: fd)
+            self.workerFinished.leave()
         }
-        worker = thread
         thread.start()
 
         return UInt16(bigEndian: bound.sin_port)
     }
 
     func stop() {
+        lock.lock()
         if clientFD >= 0 {
             _ = shutdown(clientFD, SHUT_RDWR)
-            _ = close(clientFD)
-            clientFD = -1
         }
 
         if listenFD >= 0 {
             _ = shutdown(listenFD, SHUT_RDWR)
-            _ = close(listenFD)
             listenFD = -1
         }
+        lock.unlock()
+        workerFinished.wait()
     }
 
     deinit {
         stop()
     }
 
-    private func serveOneConnection() {
-        guard listenFD >= 0 else { return }
-        let accepted = accept(listenFD, nil, nil)
-        guard accepted >= 0 else { return }
+    private func serveOneConnection(listenerFD: Int32) {
+        // The worker owns both descriptors. stop() only interrupts its I/O.
+        defer {
+            lock.lock()
+            _ = close(listenerFD)
+            listenFD = -1
+            lock.unlock()
+        }
+        var accepted: Int32 = -1
+        while accepted < 0 {
+            lock.lock()
+            let active = listenFD == listenerFD
+            lock.unlock()
+            guard active else { return }
+            accepted = accept(listenerFD, nil, nil)
+            if accepted < 0 {
+                if errno == EINTR { continue }
+                guard errno == EAGAIN || errno == EWOULDBLOCK else { return }
+                usleep(1_000)
+            }
+        }
+        let flags = fcntl(accepted, F_GETFL)
+        guard flags >= 0, fcntl(accepted, F_SETFL, flags & ~O_NONBLOCK) == 0 else {
+            _ = close(accepted)
+            return
+        }
+    #if canImport(Darwin)
+        var noSigPipe: Int32 = 1
+        _ = withUnsafePointer(to: &noSigPipe) {
+            setsockopt(accepted, SOL_SOCKET, SO_NOSIGPIPE, $0, socklen_t(MemoryLayout<Int32>.size))
+        }
+    #endif
+        lock.lock()
+        guard listenFD == listenerFD else {
+            lock.unlock()
+            _ = close(accepted)
+            return
+        }
         clientFD = accepted
+        lock.unlock()
 
         defer {
+            lock.lock()
             _ = shutdown(accepted, SHUT_RDWR)
             _ = close(accepted)
             clientFD = -1
+            lock.unlock()
         }
 
         guard let requestHeaders = readHTTPHeaders(fd: accepted),
